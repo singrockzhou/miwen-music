@@ -1,0 +1,38 @@
+# ---- 构建产物 ----
+/build/
+**/build/
+*.hap
+*.hsp
+*.app
+*.har
+
+# ---- hvigor / ohpm 缓存 ----
+/.hvigor/
+/.hvigor_*/
+/oh_modules/
+**/oh_modules/
+/node_modules/
+/.preview/
+
+# ---- IDE ----
+/.idea/
+local.properties
+
+# ---- 签名材料（本机生成，切勿入库）----
+*.p12
+*.cer
+*.p7b
+*.csr
+/signing/
+
+# ---- 真机调试产物 ----
+layout.xml
+*.jpeg
+*.jpg
+*.log
+*.trace
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini

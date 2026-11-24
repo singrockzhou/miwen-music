@@ -1,0 +1,11 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "miwen-music",
+  "version": "1.0.0",
+  "description": "密纹音乐 · 本地唱片库（HarmonyOS）",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {},
+  "devDependencies": {}
+}

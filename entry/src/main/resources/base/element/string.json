@@ -1,0 +1,12 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "本地音乐播放器" },
+    { "name": "EntryAbility_desc", "value": "密纹音乐主入口" },
+    { "name": "EntryAbility_label", "value": "密纹音乐" },
+    { "name": "perm_persist_reason", "value": "用于记住你选择的音乐文件夹，下次打开无需重新选择" },
+    { "name": "form_label", "value": "密纹音乐播控卡片" },
+    { "name": "form_desc", "value": "桌面播控与收藏入口" },
+    { "name": "card_name", "value": "密纹·播控" },
+    { "name": "card_desc", "value": "桌面即控制台" }
+  ]
+}

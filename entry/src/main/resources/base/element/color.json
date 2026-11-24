@@ -1,0 +1,9 @@
+{
+  "color": [
+    { "name": "start_window_background", "value": "#0B0B0D" },
+    { "name": "page_bg", "value": "#0B0B0D" },
+    { "name": "text_primary", "value": "#F4EFE6" },
+    { "name": "text_secondary", "value": "#8E8778" },
+    { "name": "accent", "value": "#C8A96A" }
+  ]
+}

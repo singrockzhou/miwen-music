@@ -1,0 +1,11 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/PlayerPage",
+    "pages/ListPage",
+    "pages/ProPage",
+    "pages/RootsPage",
+    "pages/DataPage",
+    "pages/StatsPage"
+  ]
+}

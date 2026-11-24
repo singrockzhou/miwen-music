@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "密纹音乐主模块（唯一 HAP）",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {}
+}
