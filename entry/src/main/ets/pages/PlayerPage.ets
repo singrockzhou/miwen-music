@@ -441,7 +441,16 @@ struct PlayerPage {
   @Builder
   LyricBlock() {
     Column() {
-      if (this.doc.source === LRC_NONE) {
+      if (this.doc.cueEmpty) {
+        // 有整轨 LRC，但这一段没词。和"磁盘上没有 .lrc"是两码事，别混成一句提示
+        Text('这一轨没有歌词')
+          .fontSize(11)
+          .fontColor(this.c().dim)
+        Text('整轨 LRC 未覆盖本段')
+          .fontSize(9)
+          .fontColor(this.c().faint)
+          .margin({ top: 4 })
+      } else if (this.doc.source === LRC_NONE) {
         Text(this.emptyLyricHint())
           .fontSize(10)
           .fontColor(this.c().faint)
@@ -501,8 +510,14 @@ struct PlayerPage {
               .fontColor(this.c().faint)
               .letterSpacing(0.6)
           }
-          if (!this.doc.synced) {
+          if (!this.doc.synced && !this.doc.cueEmpty) {
             Text('无时间轴')
+              .fontSize(7)
+              .fontColor(this.c().faint)
+              .letterSpacing(0.6)
+          }
+          if (this.doc.cueEmpty) {
+            Text('本轨无词')
               .fontSize(7)
               .fontColor(this.c().faint)
               .letterSpacing(0.6)

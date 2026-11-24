@@ -26,7 +26,7 @@ export class LrcParser {
       if (times.length === 0) {
         continue;
       }
-      const body: string = row.replace(new RegExp('\\[[0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]', 'g'), '').trim();
+      const body: string = row.replace(new RegExp('\\[[0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]', 'g'), '').trim();
       if (body.length === 0) {
         continue;
       }
@@ -75,12 +75,12 @@ export class LrcParser {
   }
 
   private static isTimeTag(s: string): boolean {
-    return new RegExp('^\\[[0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]').test(s);
+    return new RegExp('^\\[[0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]').test(s);
   }
 
   private static timesOf(row: string): number[] {
     const out: number[] = [];
-    const reg: RegExp = new RegExp('\\[([0-9]{1,2}):([0-9]{2})(?:[.:]([0-9]{1,3}))?\\]', 'g');
+    const reg: RegExp = new RegExp('\\[([0-9]{1,3}):([0-9]{2})(?:[.:]([0-9]{1,3}))?\\]', 'g');
     let m: RegExpExecArray | null = reg.exec(row);
     while (m !== null) {
       const min: number = parseInt(m[1], 10);
@@ -91,6 +91,54 @@ export class LrcParser {
       m = reg.exec(row);
     }
     return out;
+  }
+
+  /**
+   * 按时间窗裁剪并平移，返回新的 LRC 文本（CUE 虚拟轨专用）。
+   *
+   * 问题的形状：同名 `.lrc` 是针对**整轨文件**写的，行时间相对文件头；
+   * 而虚拟轨的 `position` 是相对片头（`seek(cueStart)` 之后 `currentTime - cueStart`）。
+   * 两者差一个 `cueStart`，不处理的结果就是三个虚拟轨都从第 1 行开始唱
+   * （真机验证报告 11.7 记录，截屏 W3：第三轨开头仍显示「低频探针」）。
+   *
+   * 做法：取 `[startMs, endMs)` 窗口内的行，时间逐行减去 `startMs`；
+   * 窗口外的行直接丢掉 —— 跨到别轨去的那一句本来就不属于这一轨，
+   * 保留反而会让第 1 轨唱出第 2 轨的词。`endMs <= startMs` 表示"到文件尾"（末轨）。
+   *
+   * 输出用 2 位小数（10ms）。这不是随手选的：系统桌面歌词的时间戳解析只在
+   * `[mm:ss.xx]` 这种形态上验证过（11.3 的逐行高亮就是用这种格式跑通的），
+   * 换成 3 位小数没有必要去赌系统侧解析。
+   *
+   * 已知不支持：`[offset:±N]` 标签。当前整条解析链都不处理它，
+   * 带 offset 的音源会出现整体偏移，与本次的"分轨串词"是两件事。
+   */
+  static slice(content: string, startMs: number, endMs: number): string {
+    const lines: LrcLine[] = LrcParser.parse(content);
+    const out: string[] = [];
+    for (const l of lines) {
+      if (l.time < startMs) {
+        continue;
+      }
+      if (endMs > startMs && l.time >= endMs) {
+        continue;
+      }
+      const tag: string = LrcParser.stamp(l.time - startMs);
+      out.push(`${tag}${l.text}`);
+      // 双语：同时间戳再写一行，parse 时会重新合并成 text + trans
+      if (l.trans.length > 0) {
+        out.push(`${tag}${l.trans}`);
+      }
+    }
+    return out.join('\n');
+  }
+
+  /** 毫秒 → `[mm:ss.cc]`；四舍五入到 10ms（歌词精度足够，格式与已验证的一致） */
+  private static stamp(ms: number): string {
+    const cs: number = Math.round(Math.max(0, ms) / 10);
+    const frac: string = (cs % 100).toString().padStart(2, '0');
+    const sec: string = (Math.floor(cs / 100) % 60).toString().padStart(2, '0');
+    const min: string = Math.floor(cs / 6000).toString().padStart(2, '0');
+    return `[${min}:${sec}.${frac}]`;
   }
 
   /** 二分找当前行；没有则返回 -1 */

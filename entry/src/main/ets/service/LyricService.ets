@@ -26,6 +26,11 @@ export interface LyricDoc {
   hasTrans: boolean;
   /** 原始 LRC 文本（仅 synced 时有值），给 AVSession 系统桌面歌词用 */
   raw: string;
+  /**
+   * CUE 虚拟轨专用：磁盘上确实有整轨 LRC，但**这一轨的时间窗内一句词都没有**。
+   * 与「压根没有歌词」不是一回事，页面要分开说，否则用户会以为读词失败。
+   */
+  cueEmpty: boolean;
 }
 
 /**
@@ -47,7 +52,9 @@ export class LyricService {
   private static readonly FIRST: number = 16 * 1024;
 
   static empty(): LyricDoc {
-    return { lines: [], plain: [], source: LRC_NONE, synced: false, hasTrans: false, raw: '' };
+    return {
+      lines: [], plain: [], source: LRC_NONE, synced: false, hasTrans: false, raw: '', cueEmpty: false
+    };
   }
 
   static async load(t: Track | null, pro: boolean): Promise<LyricDoc> {
@@ -88,6 +95,18 @@ export class LyricService {
       return doc;
     }
     if (LrcParser.isTimed(text)) {
+      // CUE 虚拟轨：同名 .lrc 是整轨的，轴相对文件头，而 position 相对片头（cueStart）。
+      // 不裁窗就会三轨同唱第 1 行（真机验证报告 11.7）。裁在解析之前，
+      // doc.raw 也跟着变成裁剪后的文本 —— 桌面歌词整份推送与逐行推送才同一个坐标系。
+      if (t.cueStart >= 0) {
+        text = LrcParser.slice(text, t.cueStart, t.cueEnd);
+        if (text.length === 0) {
+          // 这一轨的时间窗里一句词都没有：按无词处理，走清词分支，不残留上一轨的词
+          doc.cueEmpty = true;
+          Logger.info(TAG, `cue lrc empty in [${t.cueStart},${t.cueEnd})`);
+          return doc;
+        }
+      }
       doc.lines = LrcParser.parse(text);
       doc.synced = doc.lines.length > 0;
       doc.raw = text;
