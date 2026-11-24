@@ -4,7 +4,7 @@
 export class Const {
   static readonly APP_NAME: string = '密纹音乐';
   static readonly APP_EN: string = 'LOCAL RECORD STORE';
-  static readonly VERSION: string = '1.2.0';
+  static readonly VERSION: string = '1.2.1';
 
   /** preferences 文件名 */
   static readonly PREF_NAME: string = 'miwen_pref';

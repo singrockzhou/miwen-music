@@ -8,7 +8,7 @@
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（2.05 MB，已签名可直接 `hdc install`）
 - 代码规模：50 个 `.ets`，约 14,000 行
-- 当前版本：v1.2.0（Pro 1.5：CUE 分轨 · 无缝播放 + 交叉淡入淡出 · 桌面/锁屏歌词 · 全格式识别层）
+- 当前版本：v1.2.1（Pro 1.5：CUE 分轨 · 无缝播放 + 交叉淡入淡出 · 桌面/锁屏歌词 · 全格式识别层；1.2.1 修淡入淡出期间界面提前跳曲）
 
 ---
 
@@ -380,7 +380,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 | M4A / MP4 的 ilst 标签 | 未解析，标题落回文件名 | 与 ID3/FLAC 同一入口，P1 补 `moov/udta/meta/ilst` |
 | GBK 标签 | 先试 GB18030，失败退 UTF-8，个别老文件会乱码 | P1 内置 GBK 映射表 |
 | ~~CUE 分轨~~ | **已做（Pro 1.5）**：整轨按 CUE 拆虚拟轨，`cueStart/cueEnd` 存库，时间片定位 + 到点自动切 | CUE 与音频不同目录时靠三级配对兜底（按文件名全根找） |
-| 桌面歌词 | **已做（Pro 1.5）**：API 23+ 原生 AVSession 桌面歌词，`isDesktopLyricSupported` 为假时隐藏入口；逐行高亮真机复核通过（换行时重推整份 LRC + 全量元数据） | 淡入淡出档下界面比旧曲真正结束早 3 秒切下一首（共用 current 指针），暂不处理 |
+| 桌面歌词 | **已做（Pro 1.5）**：API 23+ 原生 AVSession 桌面歌词，`isDesktopLyricSupported` 为假时隐藏入口；逐行高亮真机复核通过（换行时重推整份 LRC + 全量元数据） | 淡入淡出期间界面停在旧曲（新增对外显示暂存），旧曲静音后才结算；淡出期内 `pause/seek/next` 均已补结算 |
 | 封面缓旋 | 未做（P0 封面静止，只做透明度呼吸） | 与进度环共用 Canvas 时逐帧动画会抢主线程，留给 P1 |
 | 卡片实时刷新 | 切歌后调用 `formProvider.updateForm`，依赖已记录的 formId | 用户没加卡片时静默跳过；P1 用 `requestFormUpdate` + 定时刷新 |
 | HiCar / 鸿蒙 PC 专属布局 | 未做 | P2，同一套曲库 |

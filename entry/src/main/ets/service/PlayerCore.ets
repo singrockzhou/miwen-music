@@ -87,6 +87,22 @@ export class PlayerCore {
   /** 交叉淡入淡出期间还在出声的旧实例；接棒时挂在这里，k=1 再释放 */
   private fadeOld: media.AVPlayer | null = null;
   private fadeOldFd: number = -1;
+  /**
+   * 交叉淡入淡出的「对外显示暂存」。
+   *
+   * 音频必须立刻接棒（新实例已经在出声，旧实例只负责淡出），但界面上不能跟着跳：
+   * 旧曲还剩 3 秒有声，标题/封面/进度条已经变成下一首，看起来像 bug。
+   * 所以接棒时把旧曲的展示信息扣在这里，snapshot() / 播控 / 桌面歌词先返回这一份，
+   * 到 k=1（旧实例真的静音并被释放）再一次性结算到新曲。
+   *
+   * 不是第二套播放状态：playing/status 始终取自当前实例，这里只暂存「显示哪首、进度多少」。
+   */
+  private uiHoldTrack: Track | null = null;
+  private uiHoldIndex: number = -1;
+  private uiHoldDur: number = 0;
+  private uiHoldPos: number = 0;
+  /** 旧曲的时间片起点：CUE 虚拟轨要把文件绝对位置换算回片内位置 */
+  private uiHoldCue: number = 0;
   // 桌面歌词：AVMetadata.lyric 给系统整份带时间轴的 LRC，singleLyricText 是我们推的当前行
   private lyricLines: LrcLine[] = [];
   private lastLyricLine: number = -1;
@@ -379,6 +395,8 @@ export class PlayerCore {
   }
 
   async pause(): Promise<void> {
+    // 淡出还没走完就暂停：先把过渡结算掉，否则旧实例会继续出声直到 3 秒结束
+    this.cancelFade(true);
     this.flushListen();
     if (this.isDemo) {
       this.stopTicker();
@@ -405,6 +423,12 @@ export class PlayerCore {
   }
 
   async next(): Promise<void> {
+    if (this.uiHoldTrack !== null) {
+      // 淡出期内核已经接到「旧曲的下一首」，这正是用户此刻想要的下一首；
+      // 再 advance 一次会跳过它（index 已前进），所以这里只做结算
+      this.cancelFade(true);
+      return;
+    }
     await this.advance(true);
   }
 
@@ -450,6 +474,9 @@ export class PlayerCore {
   }
 
   async seek(ms: number): Promise<void> {
+    // 淡出期内核已经在新曲上，而用户拖的是（界面上）旧曲的进度条：
+    // 先结算再落针，避免「显示旧曲、定位到新曲」的错位
+    this.cancelFade(true);
     const target: number = Math.max(0, Math.min(ms, this.duration > 0 ? this.duration : ms));
     this.position = target;
     if (this.isDemo) {
@@ -974,6 +1001,13 @@ export class PlayerCore {
     const nfd: number = this.nextFd;
     const oldP: media.AVPlayer | null = this.player;
     const oldFd: number = this.fd;
+    // 抓旧曲的展示信息（必须在覆盖 index/position 之前）：keepOld 时界面要停在这首上
+    const oldIndex: number = this.index;
+    const oldTrack: Track | null =
+      oldIndex >= 0 && oldIndex < this.queue.length ? this.queue[oldIndex] : null;
+    const oldDur: number = this.duration;
+    const oldPos: number = this.position;
+    const oldCue: number = this.cueStart;
     this.nextP = null;
     this.nextFd = -1;
     this.nextReady = false;
@@ -1015,6 +1049,14 @@ export class PlayerCore {
         // 交叉淡入淡出：旧实例还要出声，先挂起来由 fadeTick 压到 0 再释放
         this.fadeOld = oldP;
         this.fadeOldFd = oldFd;
+        // 同时把对外显示扣在旧曲上，等 cancelFade 结算
+        if (oldTrack !== null) {
+          this.uiHoldTrack = oldTrack;
+          this.uiHoldIndex = oldIndex;
+          this.uiHoldDur = oldDur;
+          this.uiHoldPos = oldPos;
+          this.uiHoldCue = oldCue > 0 ? oldCue : 0;
+        }
       } else {
         PlayerCore.quietRelease(oldP);
       }
@@ -1026,9 +1068,15 @@ export class PlayerCore {
         Logger.warn(TAG, 'old fd close failed');
       }
     }
-    this.setMeta(t);
-    this.loadLrcForSession(t); // 后台也能有词：桌面歌词逐行推送不依赖页面
-    this.pushSessionState(false);
+    if (this.uiHoldTrack === null) {
+      // 常规接棒（无缝档 / 无淡出）：对外立刻切到新曲
+      this.setMeta(t);
+      this.loadLrcForSession(t); // 后台也能有词：桌面歌词逐行推送不依赖页面
+      this.pushSessionState(false);
+    } else {
+      // 交叉淡入淡出：音频已在新曲出声，但标题/进度/歌词先停在旧曲，由 cancelFade 结算
+      Logger.info(TAG, `crossfade audio -> #${ni}, ui hold on #${oldIndex}`);
+    }
     this.notify(true);
     SettingsService.saveCard(t.title, t.artist.length > 0 ? t.artist : '未知艺人', true);
     SettingsService.pushCard();
@@ -1062,6 +1110,18 @@ export class PlayerCore {
     const cur: media.AVPlayer | null = this.player;
     const old: media.AVPlayer | null = this.fadeOld;
     const cap: number = this.ducked ? Const.DUCK_VOLUME : 1.0;
+    // 界面还停在旧曲：进度条要跟着旧实例走，否则会冻在接棒那一刻
+    if (this.uiHoldTrack !== null && old !== null) {
+      try {
+        const ct: number = old.currentTime;
+        if (ct > 0) {
+          this.uiHoldPos = this.uiHoldCue > 0 ? Math.max(0, ct - this.uiHoldCue) : ct;
+        }
+      } catch (e) {
+        // 实例正在释放，读不到就沿用上一次的位置
+      }
+      this.notify(false);
+    }
     if (!this.fadeSwapped) {
       // 还没接棒：只压当前曲，同时等预加载就绪
       try {
@@ -1108,7 +1168,7 @@ export class PlayerCore {
     }
   }
 
-  /** 停掉淡入淡出；resetVolume 时把音量恢复到正常值 */
+  /** 停掉淡入淡出并结算对外状态；resetVolume 时把音量恢复到正常值 */
   private cancelFade(resetVolume: boolean): void {
     if (this.fadeTimer >= 0) {
       clearInterval(this.fadeTimer);
@@ -1116,6 +1176,7 @@ export class PlayerCore {
       Logger.info(TAG, 'crossfade end');
     }
     this.fadeSwapped = false;
+    const held: Track | null = this.uiHoldTrack;
     // 淡出中的旧实例到此为止（没接棒就退化的那种情况，fadeOld 为空，这里是空操作）
     this.releaseFading();
     if (resetVolume && !this.isDemo) {
@@ -1127,6 +1188,18 @@ export class PlayerCore {
       } catch (e) {
         // 忽略
       }
+    }
+    if (held !== null) {
+      // 结算：旧曲已彻底静音并释放，此刻才把标题 / 进度 / 歌词 / 播控切到新曲。
+      // 用户中途操作（暂停、拖进度、切歌）也走这里，保证不留"显示旧曲、声音新曲"的错位。
+      const t: Track | null = this.current();
+      if (t !== null) {
+        this.setMeta(t);
+        this.loadLrcForSession(t);
+      }
+      this.pushSessionState(true);
+      this.notify(true);
+      Logger.info(TAG, `crossfade settle ui -> #${this.index} (was ${held.title})`);
     }
   }
 
@@ -1156,6 +1229,12 @@ export class PlayerCore {
     const fd: number = this.fadeOldFd;
     this.fadeOld = null;
     this.fadeOldFd = -1;
+    // 旧实例没了就没有"停在哪首"可言，展示暂存一并清掉（结算动作由调用方决定）
+    this.uiHoldTrack = null;
+    this.uiHoldIndex = -1;
+    this.uiHoldDur = 0;
+    this.uiHoldPos = 0;
+    this.uiHoldCue = 0;
     if (p !== null) {
       PlayerCore.quietRelease(p);
     }
@@ -1258,6 +1337,11 @@ export class PlayerCore {
     if (this.lyricLines.length === 0 || this.session === null) {
       return;
     }
+    // 淡出期间对外还是旧曲：此时页面刚加载的是旧曲的词，而位置已属于新曲，
+    // 两种都会把词挂到错的 assetId 上，等 cancelFade 结算时统一补推
+    if (this.uiHoldTrack !== null) {
+      return;
+    }
     const i: number = LrcParser.indexAt(this.lyricLines, pos);
     if (i === this.lastLyricLine) {
       return;
@@ -1319,6 +1403,8 @@ export class PlayerCore {
   // ---------------- 异常 ----------------
 
   private fail(msg: string): void {
+    // 起播失败时若还在淡出，先把过渡结算掉：否则旧实例留着出声、界面停在旧曲上不出来
+    this.cancelFade(true);
     this.errorText = msg;
     this.setStatus(Const.ST_ERROR);
     this.stopTicker();
@@ -1444,7 +1530,11 @@ export class PlayerCore {
     const st: avSession.AVPlaybackState = {
       state: state,
       speed: 1.0,
-      position: { elapsedTime: this.position, updateTime: Date.now() }
+      // 淡出期间播控中心也停在旧曲（metadata 同样延后），否则会出现"旧标题 + 新进度"
+      position: {
+        elapsedTime: this.uiHoldTrack !== null ? this.uiHoldPos : this.position,
+        updateTime: Date.now()
+      }
     };
     this.session.setAVPlaybackState(st).catch((e: Object) => Logger.warn(TAG, `state ${e}`));
   }
@@ -1453,6 +1543,11 @@ export class PlayerCore {
     this.lrc = text;
     this.lyricLines = LrcParser.parse(text);
     this.lastLyricLine = -1;
+    if (this.uiHoldTrack !== null) {
+      // 淡出期间页面加载的是旧曲的词，而 current() 已经是新曲：
+      // 此时推 metadata 会把旧词挂到新曲 assetId 上，还会提前暴露下一首。等结算时统一重推。
+      return;
+    }
     const t: Track | null = this.current();
     if (t === null || this.session === null) {
       return;
@@ -1562,14 +1657,18 @@ export class PlayerCore {
   }
 
   snapshot(): PlayerSnapshot {
-    const t: Track | null = this.current();
+    // 交叉淡入淡出期间对外仍显示旧曲（此时音频已经在新曲出声）。
+    // 因为页面只消费这一份快照，标题 / 封面 / 进度条 / 歌词 / 队列高亮全部自动跟随，
+    // 不必给 UI 加第二套索引。
+    const hold: Track | null = this.uiHoldTrack;
+    const t: Track | null = hold !== null ? hold : this.current();
     const snap: PlayerSnapshot = emptySnapshot();
     snap.track = t;
     snap.status = this.status;
     snap.playing = this.status === Const.ST_PLAYING;
-    snap.position = this.position;
-    snap.duration = this.duration;
-    snap.index = this.index;
+    snap.position = hold !== null ? this.uiHoldPos : this.position;
+    snap.duration = hold !== null ? this.uiHoldDur : this.duration;
+    snap.index = hold !== null ? this.uiHoldIndex : this.index;
     snap.total = this.queue.length;
     snap.mode = this.mode;
     snap.favorite = t !== null && PlaylistStore.isFavorite(t.uri);
