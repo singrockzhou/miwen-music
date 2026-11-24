@@ -4,7 +4,7 @@
 export class Const {
   static readonly APP_NAME: string = '密纹音乐';
   static readonly APP_EN: string = 'LOCAL RECORD STORE';
-  static readonly VERSION: string = '1.2.2';
+  static readonly VERSION: string = '1.3.0';
 
   /** preferences 文件名 */
   static readonly PREF_NAME: string = 'miwen_pref';
@@ -70,17 +70,20 @@ export class Const {
   static readonly AUDIO_SUFFIX: string[] = [
     '.mp3', '.flac', '.m4a', '.aac', '.wav', '.ogg', '.mka', '.ape',
     // 全格式识别层（第二梯队第 7/11 项）：先扫进来、明确标记"暂不支持"，
-    // 等 Pro 2.0 的 NAPI 解码链落地后把这批从 UNDECODED 挪回可播
-    '.dsf', '.dff', '.iso', '.wv', '.aiff', '.aif'
+    // 每接通一种原生解码就从 UNDECODED 挪走一个
+    '.dsf', '.dff', '.iso', '.wv', '.aiff', '.aif', '.aifc'
   ];
   /** CUE 描述文件扩展名 */
   static readonly CUE_SUFFIX: string = '.cue';
   /**
    * 这些格式识别入库但系统解码器播不动（鸿蒙 AVPlayer 对 APE/DSD/WavPack/AIFF 无解）。
    * 点播时给"为什么播不了"的明确话术，而不是笼统的格式错误。
+   *
+   * AIFF/AIFC 已由 libmiwen.so 原生解码接过（v1.3.0），从这里移出；
+   * 但能否真播仍由 NativePlayer.handles(suffix) 决定，两处口径必须一致。
    */
   static readonly UNDECODED_SUFFIX: string[] = [
-    '.ape', '.dsf', '.dff', '.iso', '.wv', '.aiff', '.aif'
+    '.ape', '.dsf', '.dff', '.iso', '.wv'
   ];
   /** 扫描时跳过的目录名（彩铃/录音这类短音频重灾区） */
   static readonly SKIP_DIRS: string[] = ['Sounds', 'SoundRecorder'];

@@ -8,7 +8,7 @@
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（2.05 MB，已签名可直接 `hdc install`）
 - 代码规模：50 个 `.ets`，约 14,000 行
-- 当前版本：v1.2.2（Pro 1.5：CUE 分轨 · 无缝播放 + 交叉淡入淡出 · 桌面/锁屏歌词 · 全格式识别层；1.2.1 修淡入淡出期间界面提前跳曲；1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
+- 当前版本：v1.3.0（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC 已能真播；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -40,6 +40,12 @@
 ```
 entry/src/main/
 ├─ module.json5                 权限（KEEP_BACKGROUND_RUNNING / FILE_ACCESS_PERSIST）、后台模式、卡片扩展
+├─ cpp/                         原生解码器（CMake，产物 libmiwen.so）
+│  ├─ CMakeLists.txt            add_library(miwen SHARED ...) → libmiwen.so
+│  ├─ napi_init.cpp             NAPI 绑定：open/read/seek/close/handles/version
+│  ├─ decoder.h / decoder.cpp   统一接口 + 按 magic（再看扩展名）分派
+│  ├─ fmt_aiff.cpp              AIFF / AIFC（PCM / sowt / fl32 / fl64）
+│  └─ types/libmiwen/           给 ArkTS 的 .d.ts 与 oh-package.json5
 ├─ ets/
 │  ├─ common/
 │  │  ├─ Constants.ets          全部常量：格式、分页、主题键、播放模式、断点
@@ -53,7 +59,9 @@ entry/src/main/
 │  │  ├─ TrackStore.ets         曲库索引：upsert、分页、搜索、按专辑聚合、按文件夹聚合、孤儿归属修复
 │  │  └─ PlaylistStore.ets      收藏 / 歌单 / 最近播放（只存 uri）
 │  ├─ service/
-│  │  ├─ PlayerCore.ets         播放内核（单例）：AVPlayer + AVSession + 长时任务 + 焦点 + 双引擎
+│  │  ├─ PlayerCore.ets         播放内核（单例）：AVPlayer + AVSession + 长时任务 + 焦点 + 三引擎
+│  │  ├─ NativePlayer.ets       原生解码通道：libmiwen.so 解 PCM → AudioRenderer（v1.3.0）
+│  │  ├─ NativeSelfTest.ets     原生解码自检：现场生成 AIFF 并播放，验证字节序/声道/位深
 │  │  ├─ LibraryService.ets     选目录 → 持久授权 → 递归扫描 → 标签解析 → 入库（按根逐个扫）
 │  │  ├─ RootService.ets        多根目录真源：增删、判重、嵌套检测、按 path 配回新授权
 │  │  ├─ ImportFlow.ets         "选目录+扫描+切来源+通知刷新" 的完整流程（三处复用）
@@ -209,6 +217,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
         ▼
    PlayerCore（单例）
    ├─ local 引擎：media.AVPlayer，一首一个实例，切歌先摘引用再 release
+   ├─ native 引擎：libmiwen.so 解 PCM → AudioRenderer.on('writeData')（v1.3.0，AIFF/AIFC）
    └─ demo 引擎：200ms 计时器推进度（示例曲库没有真实文件）
    ├─ AVSession：metadata + playbackState（起播前先置 BUFFERING）
    ├─ backgroundTaskManager：AUDIO_PLAYBACK 长时任务，与播放态成对申请/释放
@@ -226,8 +235,35 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 - **示例引擎**是刻意的设计：没有真实音频也能验收播放/暂停/进度/上下曲/模式，换成真实曲库后自动走 AVPlayer。
 - **示例曲不申请长时任务**（`startBgTask` 里 `isDemo` 直接返回）：它没有 AVPlayer，占了后台权限也不会出声。实机日志可区分——真实播放是 `hasBackgroundTask:1, isFreeze:0`，示例是 `0 / 1`。
 
-### 4.1 ArkUI 真机坑（2026-11-24 实机踩到）
+### 4.1 自建解码链（v1.3.0）
 
+系统解码器（AVCodec）解不了 APE / ALAC / WavPack / AIFF，所以这条链是"自己解、自己喂"：
+
+```
+Track → NativePlayer.open(path)
+          └─ libmiwen.so: CreateSource() 按 magic 分派 → 解析格式头 → 返回
+             { sampleRate, channels, bits, totalFrames, durationMs }
+       → audio.createAudioRenderer(素材原采样率, F32LE)
+       → renderer.on('writeData', buf) → decRead(id, frames) → 交错 float32 → memcpy 进 buf
+       → PlayerCore 250ms 读 getPositionMs() 推进度（系统不会替我们发 timeUpdate）
+```
+
+几个刻意的取舍：
+
+- **统一输出交错 float32**：三种格式内部表示不同（AIFF 大端整型、WavPack 整型/浮点、ALAC 整型），统一到 float 之后 ArkTS 只认一种 `SAMPLE_FORMAT_F32LE`，不必每格式一条通道。
+- **不做重采样**：素材采样率原样交给 AudioRenderer，不支持就报错。静默换成 48k 会变调——对发烧友来说变调比"播不了"更伤信任。
+- **`write()` 已废弃**（API 11 起），必须用 `on('writeData')` 回调，由系统按需索要数据；回调里直接 `stop()` 会和音频线程互等，收尾放到 `setTimeout(0)`。
+- **进度口径是"已写入帧数"**，比真实出声早约一个缓冲区（100~200ms），与 AVPlayer 侧观感一致。
+- **直出照样生效**：AudioRenderer 也有 `setAudioEffectMode`，原生通道同样能旁路 Histen（真机日志 `audioEffectMode=NONE`）。
+- **音频焦点要自己听**：没有 AVPlayer 就没有替我们申请焦点的对象，必须 `renderer.on('audioInterrupt')`，DUCK→音量 25%，PAUSE/STOP→暂停，RESUME→续播。
+- **NAPI 导出的是句柄（number）而不是指针**：JS 侧不能长期持有 native 指针，句柄表在 .so 内，`close` 时删表并 `delete`。
+- **`open` 同步、`read` 同步**：一次 100ms 数据，AIFF 只是 memcpy + 整型转 float，微秒级；换成 WavPack/APE 后若单次解码超过 5ms，再挪到 async work。
+
+自检入口：设置 → 诊断 → **原生解码自检**。现场生成 8 秒 AIFF（四段 440/660/880/1100 Hz），听到四个依次升高的音说明字节序、声道、位深全对。
+
+已知边界（v1.3.0）：只接了 AIFF/AIFC；WavPack/ALAC/APE 待接；CUE 分轨暂不支持原生格式（时间片要裁 PCM）；多声道 >2 不支持；采样率 8k–192k 之外不支持。
+
+### 4.2 ArkUI 真机坑（2026-11-24 实机踩到）
 这些在编译期全绿、只有在设备上才暴露：
 
 - **`width('100%')` 会撑坏自动宽度的容器**：`Column(){ Text; Row().width('100%') }` 里的 Row 会按父容器 100% 展开，导致整列占满一行、后面的页签被挤出屏幕（表现为"四个排序只剩一个"）。下划线一类的装饰改用 `Text.border({width:{bottom:1}})`，宽度随内容走。

@@ -13,6 +13,7 @@ import { SettingsService } from '../service/SettingsService';
 import { ActionPanel, ActionItem } from '../components/ActionPanel';
 import { SettingRow } from '../components/SettingRow';
 import { SelfTest } from '../service/SelfTest';
+import { NativeSelfTest } from '../service/NativeSelfTest';
 import { AudioProbe, AudioProbeReport } from '../service/AudioProbe';
 import { LyricService } from '../service/LyricService';
 import { ProService } from '../service/ProService';
@@ -799,6 +800,22 @@ export struct SettingsView {
                   Logger.info('Settings', `selftest ${p}`);
                 }).catch((e: Object) => {
                   promptAction.showToast({ message: `自检失败：${e}` });
+                });
+              }
+            })
+            this.Divider()
+            // 这条证明"自建解码链"是真的：现场生成 AIFF，走 libmiwen.so 解码 + AudioRenderer 输出，
+            // 听到 440 / 660 / 880 / 1100 Hz 四个音就说明字节序、声道、位深全对
+            SettingRow({
+              label: '原生解码自检',
+              value: '8 秒',
+              detail: '现场生成一个 AIFF（前 4 段各 2 秒：440 / 660 / 880 / 1100 Hz），走自建解码链播放。听到四个依次升高的音=解码与输出都对',
+              onTap: () => {
+                NativeSelfTest.run(this.ctx).then((s: string) => {
+                  promptAction.showToast({ message: s, duration: 3200 });
+                  Logger.info('Settings', `native selftest ${s}`);
+                }).catch((e: Object) => {
+                  promptAction.showToast({ message: `原生自检失败：${e}` });
                 });
               }
             })

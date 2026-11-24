@@ -15,6 +15,7 @@ import { StatsStore } from '../db/StatsStore';
 import { SettingsService } from './SettingsService';
 import { ProService, PRO_KEY } from './ProService';
 import { LyricService } from './LyricService';
+import { NativePlayer } from './NativePlayer';
 import { LrcLine, LrcParser } from '../common/Lrc';
 
 const TAG: string = 'PlayerCore';
@@ -52,6 +53,10 @@ export class PlayerCore {
   private lrc: string = '';
 
   private demoTimer: number = -1;
+  // 原生解码通道（AIFF/AIFC，后续 WavPack/ALAC/APE）：AVPlayer 解不了，自己解 PCM 喂 AudioRenderer
+  private native: NativePlayer | null = null;
+  private isNative: boolean = false;
+  private nativeTimer: number = -1;
   private skipTimer: number = -1;
   private sleepTimer: number = -1;
   private bgRunning: boolean = false;
@@ -325,13 +330,23 @@ export class PlayerCore {
           return;
         }
       }
-      // 识别层（第二梯队第 7/11 项）：系统解码器播不动的格式，给明确话术而不是笼统报错
-      if (Const.UNDECODED_SUFFIX.indexOf(t.suffix) >= 0) {
-        this.fail(`${t.suffix.substring(1).toUpperCase()} 系统解码不了，先转成 FLAC/WAV；原生解码在 Pro 2.0 规划里`);
-        return;
-      }
       this.isDemo = false;
-      await this.openReal(t);
+      // 自建解码链（第二梯队第 7 项）：系统解码器解不了的格式交给 libmiwen.so + AudioRenderer。
+      // 判定读 NativePlayer.handles()，与 Constants.UNDECODED_SUFFIX 是同一份口径的两面。
+      if (NativePlayer.handles(t.suffix)) {
+        if (t.cueStart >= 0) {
+          // 分轨要按时间片裁 PCM，原生通道还没做窗口限制；放它播整轨会让用户听到下一轨
+          this.fail('CUE 分轨暂只支持系统可解码的格式（WAV / FLAC）');
+          return;
+        }
+        await this.openNative(t);
+      } else if (Const.UNDECODED_SUFFIX.indexOf(t.suffix) >= 0) {
+        // 识别层（第二梯队第 11 项）：还没接原生解码的格式，给明确话术而不是笼统报错
+        this.fail(`${t.suffix.substring(1).toUpperCase()} 系统解码不了，原生解码器还没接入；先转成 FLAC/WAV`);
+        return;
+      } else {
+        await this.openReal(t);
+      }
     }
 
     this.setMeta(t);
@@ -380,6 +395,23 @@ export class PlayerCore {
       this.notify(true);
       return;
     }
+    if (this.isNative) {
+      const np: NativePlayer | null = this.native;
+      if (np === null) {
+        await this.playAt(this.index);
+        return;
+      }
+      const ok: boolean = await np.start();
+      if (!ok) {
+        this.fail(np.errorText().length > 0 ? np.errorText() : '无法继续播放');
+        return;
+      }
+      this.setStatus(Const.ST_PLAYING);
+      this.startNativeTicker();
+      this.pushSessionState(false);
+      this.notify(true);
+      return;
+    }
     const p: media.AVPlayer | null = this.player;
     if (p === null) {
       // 出错后实例已释放，重新起播而不是干等
@@ -403,6 +435,20 @@ export class PlayerCore {
       this.setStatus(Const.ST_PAUSED);
       this.pushSessionState(false);
       this.notify(true);
+      this.persistState();
+      return;
+    }
+    if (this.isNative) {
+      const np: NativePlayer | null = this.native;
+      if (np === null) {
+        return;
+      }
+      await np.pause();
+      this.stopNativeTicker();
+      this.setStatus(Const.ST_PAUSED);
+      this.pushSessionState(false);
+      this.notify(true);
+      this.stopBgTask();
       this.persistState();
       return;
     }
@@ -482,6 +528,18 @@ export class PlayerCore {
     if (this.isDemo) {
       this.notify(true);
       this.pushSessionState(true);
+      return;
+    }
+    if (this.isNative) {
+      const np: NativePlayer | null = this.native;
+      if (np === null) {
+        return;
+      }
+      const landed: number = await np.seekTo(target);
+      this.position = landed;
+      this.lastTickPos = landed; // 收听统计从新位置续算，不把回退算成负增量
+      this.pushSessionState(true);
+      this.notify(true);
       return;
     }
     const p: media.AVPlayer | null = this.player;
@@ -671,7 +729,16 @@ export class PlayerCore {
   setDirectMode(on: boolean): boolean {
     this.direct = on;
     SettingsService.setDirect(on);
-    const ok: boolean = this.applyEffect();
+    let ok: boolean = false;
+    if (this.isNative) {
+      // 原生通道的开关挂在 AudioRenderer 上，不是 AVPlayer
+      if (this.native !== null) {
+        this.native.setDirectMode(on);
+        ok = true;
+      }
+    } else {
+      ok = this.applyEffect();
+    }
     Logger.info(TAG, `direct -> ${on ? 'ON' : 'OFF'} applied=${ok}`);
     this.notify(true);
     return ok;
@@ -740,6 +807,113 @@ export class PlayerCore {
     }
   }
 
+  /**
+   * 原生解码通道。
+   *
+   * 与 openReal 的差别：这里没有 AVPlayer，PCM 由 libmiwen.so 解出来、AudioRenderer 按需索要。
+   * 所以 duration / 进度 / 播完事件全部要自己维护 —— 系统不会再替我们发 timeUpdate。
+   */
+  private async openNative(t: Track): Promise<void> {
+    await this.releaseReal();
+    this.isNative = true;
+    this.setStatus(Const.ST_LOADING);
+    this.notify(true);
+
+    const np: NativePlayer = new NativePlayer();
+    this.native = np;
+    if (!np.open(t.path)) {
+      const why: string = np.errorText();
+      this.native = null;
+      this.isNative = false;
+      np.stop().catch((e: Object) => Logger.warn(TAG, `${e}`));
+      this.fail(`原生解码打不开：${why}`);
+      return;
+    }
+
+    // 时长只能从解码器拿：AVPlayer 的 durationUpdate 在原生通道里不存在
+    this.duration = np.getDurationMs();
+    // 直出（旁路系统音效）在原生通道同样生效：AudioRenderer 也有 setAudioEffectMode
+    np.setDirectMode(this.direct);
+    np.setInterruptCallback((event: audio.InterruptEvent) => {
+      if (this.native !== np) {
+        return;
+      }
+      this.handleNativeInterrupt(np, event);
+    });
+    np.setEndCallback(() => {
+      if (this.native !== np) {
+        return; // 已经切走，旧实例的迟到回调
+      }
+      Logger.info(TAG, 'native eof -> advance');
+      this.advance(false).catch((e: Object) => Logger.warn(TAG, `${e}`));
+    });
+
+    const started: boolean = await np.start();
+    if (this.native !== np) {
+      return; // start 期间用户又切了歌
+    }
+    if (!started) {
+      this.fail(np.errorText().length > 0 ? np.errorText() : '音频输出启动失败');
+      return;
+    }
+    this.setStatus(Const.ST_PLAYING);
+    this.errorText = '';
+    this.errorStreak = 0;
+    this.startBgTask();
+    this.startNativeTicker();
+    this.pushSessionState(false);
+    this.notify(true);
+    Logger.info(TAG, `native playing ${t.path} dur=${this.duration}ms`);
+  }
+
+  /** 原生通道的音频焦点处理，语义与 bindPlayerInterrupt 保持一致 */
+  private handleNativeInterrupt(np: NativePlayer, event: audio.InterruptEvent): void {
+    if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
+      np.setVolume(0.25);
+      this.ducked = true;
+      this.notify(true);
+    } else if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
+      np.setVolume(1.0);
+      this.ducked = false;
+      this.notify(true);
+    } else if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
+      event.hintType === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+      this.pause().catch((e: Object) => Logger.warn(TAG, `interrupt pause ${e}`));
+    } else if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+      this.resume().catch((e: Object) => Logger.warn(TAG, `interrupt resume ${e}`));
+    }
+  }
+
+  /** 原生通道的进度源：已写入 AudioRenderer 的帧数换算成毫秒，250ms 采一次 */
+  private startNativeTicker(): void {
+    this.stopNativeTicker();
+    this.nativeTimer = setInterval(() => {
+      const np: NativePlayer | null = this.native;
+      if (np === null || this.status !== Const.ST_PLAYING) {
+        return;
+      }
+      const ms: number = np.getPositionMs();
+      if (ms < this.position) {
+        return; // seek 之后位置还没追上，别让进度条来回跳
+      }
+      this.accumulateListen(ms);
+      this.position = ms;
+      this.abLoopCheck(ms);
+      if (this.status !== Const.ST_PLAYING) {
+        return; // A-B 回跳已经触发 seek，这一帧不再推
+      }
+      this.notify(false);
+      this.pushSessionState(false);
+    }, 250);
+  }
+
+  private stopNativeTicker(): void {
+    if (this.nativeTimer >= 0) {
+      clearInterval(this.nativeTimer);
+      this.nativeTimer = -1;
+    }
+  }
+
   private onState(p: media.AVPlayer, state: media.AVPlayerState): void {
     if (p !== this.player) {
       return; // 旧实例的迟到回调，忽略
@@ -781,6 +955,7 @@ export class PlayerCore {
   private async releaseReal(): Promise<void> {
     this.releaseNext();
     this.cancelFade(true);
+    this.releaseNative();
     const p: media.AVPlayer | null = this.player;
     this.player = null;
     if (p !== null) {
@@ -804,6 +979,20 @@ export class PlayerCore {
         Logger.warn(TAG, 'fd already closed');
       }
       this.fd = -1;
+    }
+  }
+
+  /**
+   * 释放原生通道。不 await：AudioRenderer.release() 是异步的，对调用方来说
+   * 只要"不再由我们驱动"就够了，句柄与 .so 内的解码器由 NativePlayer 自己收尾。
+   */
+  private releaseNative(): void {
+    this.stopNativeTicker();
+    const np: NativePlayer | null = this.native;
+    this.native = null;
+    this.isNative = false;
+    if (np !== null) {
+      np.stop().catch((e: Object) => Logger.warn(TAG, `native stop ${e}`));
     }
   }
 

@@ -14,6 +14,13 @@
 /node_modules/
 /.preview/
 
+# ---- CMake / native 中间产物（源码在 entry/src/main/cpp，产物不入库）----
+**/.cxx/
+**/cmake-build-*/
+*.so
+*.o
+*.a
+
 # ---- IDE ----
 /.idea/
 local.properties

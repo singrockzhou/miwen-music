@@ -1,0 +1,6 @@
+{
+  "name": "libmiwen.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "密纹音乐原生解码器（AIFF/WavPack/ALAC/APE）"
+}
