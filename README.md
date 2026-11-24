@@ -7,7 +7,7 @@
 - 兼容 / 目标：HarmonyOS 5.0.0 (API 12)
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（2.05 MB，已签名可直接 `hdc install`）
-- 代码规模：44 个 `.ets`，约 9,600 行
+- 代码规模：50 个 `.ets`，约 14,000 行
 - 当前版本：v1.2.0（Pro 1.5：CUE 分轨 · 无缝播放 + 交叉淡入淡出 · 桌面/锁屏歌词 · 全格式识别层）
 
 ---
