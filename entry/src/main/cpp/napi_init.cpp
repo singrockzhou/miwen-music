@@ -104,9 +104,10 @@ napi_value Open(napi_env env, napi_callback_info cb) {
         return MakeInfo(env, false, AudioInfo(), 0, "路径为空");
     }
 
-    AudioSource *src = CreateSource(path);
+    std::string why;
+    AudioSource *src = CreateSource(path, &why);
     if (src == nullptr) {
-        return MakeInfo(env, false, AudioInfo(), 0, "该格式的解码器尚未接入");
+        return MakeInfo(env, false, AudioInfo(), 0, why.empty() ? "该格式的解码器尚未接入" : why.c_str());
     }
 
     const AudioInfo info = src->open(path);
@@ -211,7 +212,7 @@ napi_value Handles(napi_env env, napi_callback_info cb) {
 /** version() → 解码器版本串，用来确认装到设备上的确实是新 .so */
 napi_value Version(napi_env env, napi_callback_info) {
     napi_value out = nullptr;
-    napi_create_string_utf8(env, "miwen-decoder/0.1 (aiff)", NAPI_AUTO_LENGTH, &out);
+    napi_create_string_utf8(env, "miwen-decoder/0.2 (aiff, wavpack)", NAPI_AUTO_LENGTH, &out);
     return out;
 }
 

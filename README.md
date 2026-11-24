@@ -6,9 +6,9 @@
 - 包名：`com.miwen.music`
 - 兼容 / 目标：HarmonyOS 5.0.0 (API 12)
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
-- 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（2.05 MB，已签名可直接 `hdc install`）
-- 代码规模：50 个 `.ets`，约 14,000 行
-- 当前版本：v1.3.0（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC 已能真播；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
+- 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.72 MB，已签名可直接 `hdc install`）
+- 代码规模：52 个 `.ets` 约 14,900 行 + `cpp/` 自研 7 文件约 1,220 行（另内嵌 libwavpack 5.8.1 源码 30 文件）
+- 当前版本：v1.3.1（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC/WavPack 已能真播——WavPack 内嵌官方 libwavpack 5.8.1（BSD-3）；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -45,6 +45,8 @@ entry/src/main/
 │  ├─ napi_init.cpp             NAPI 绑定：open/read/seek/close/handles/version
 │  ├─ decoder.h / decoder.cpp   统一接口 + 按 magic（再看扩展名）分派
 │  ├─ fmt_aiff.cpp              AIFF / AIFC（PCM / sowt / fl32 / fl64）
+│  ├─ fmt_wavpack.cpp           WavPack（内嵌官方 libwavpack 5.8.1，BSD-3；seek 失败走重建+顺序解码）
+│  ├─ wavpack/                  libwavpack 源码 30 文件（去 DSD、去手写汇编，附原 COPYING）
 │  └─ types/libmiwen/           给 ArkTS 的 .d.ts 与 oh-package.json5
 ├─ ets/
 │  ├─ common/
@@ -217,7 +219,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
         ▼
    PlayerCore（单例）
    ├─ local 引擎：media.AVPlayer，一首一个实例，切歌先摘引用再 release
-   ├─ native 引擎：libmiwen.so 解 PCM → AudioRenderer.on('writeData')（v1.3.0，AIFF/AIFC）
+   ├─ native 引擎：libmiwen.so 解 PCM → AudioRenderer.on('writeData')（v1.3.1，AIFF/AIFC/WavPack）
    └─ demo 引擎：200ms 计时器推进度（示例曲库没有真实文件）
    ├─ AVSession：metadata + playbackState（起播前先置 BUFFERING）
    ├─ backgroundTaskManager：AUDIO_PLAYBACK 长时任务，与播放态成对申请/释放
@@ -235,7 +237,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 - **示例引擎**是刻意的设计：没有真实音频也能验收播放/暂停/进度/上下曲/模式，换成真实曲库后自动走 AVPlayer。
 - **示例曲不申请长时任务**（`startBgTask` 里 `isDemo` 直接返回）：它没有 AVPlayer，占了后台权限也不会出声。实机日志可区分——真实播放是 `hasBackgroundTask:1, isFreeze:0`，示例是 `0 / 1`。
 
-### 4.1 自建解码链（v1.3.0）
+### 4.1 自建解码链（v1.3.1）
 
 系统解码器（AVCodec）解不了 APE / ALAC / WavPack / AIFF，所以这条链是"自己解、自己喂"：
 
@@ -257,11 +259,16 @@ Track → NativePlayer.open(path)
 - **直出照样生效**：AudioRenderer 也有 `setAudioEffectMode`，原生通道同样能旁路 Histen（真机日志 `audioEffectMode=NONE`）。
 - **音频焦点要自己听**：没有 AVPlayer 就没有替我们申请焦点的对象，必须 `renderer.on('audioInterrupt')`，DUCK→音量 25%，PAUSE/STOP→暂停，RESUME→续播。
 - **NAPI 导出的是句柄（number）而不是指针**：JS 侧不能长期持有 native 指针，句柄表在 .so 内，`close` 时删表并 `delete`。
-- **`open` 同步、`read` 同步**：一次 100ms 数据，AIFF 只是 memcpy + 整型转 float，微秒级；换成 WavPack/APE 后若单次解码超过 5ms，再挪到 async work。
+- **`open` 同步、`read` 同步**：一次 100ms 数据，AIFF 只是 memcpy + 整型转 float，微秒级；WavPack 真机实测单次解码远低于 5ms，暂不需要 async work。
 
 自检入口：设置 → 诊断 → **原生解码自检**。现场生成 8 秒 AIFF（四段 440/660/880/1100 Hz），听到四个依次升高的音说明字节序、声道、位深全对。
 
-已知边界（v1.3.0）：只接了 AIFF/AIFC；WavPack/ALAC/APE 待接；CUE 分轨暂不支持原生格式（时间片要裁 PCM）；多声道 >2 不支持；采样率 8k–192k 之外不支持。
+**WavPack 专有的两个取舍**（v1.3.1，详见验证报告第十三节）：
+
+- **内嵌官方 libwavpack 5.8.1**（BSD-3，附原 `COPYING`）：WavPack 的熵解码不可能自写，裁掉 DSD 与手写汇编（arm64 走纯 C）后 24 个 `.c` 直接编译进 `libmiwen.so`（strip 后 466,992 字节）。
+- **seek 失败后走「关掉重建 + 顺序解码」**：libwavpack 官方注释写明 `WavpackSeekSample64` 返回 FALSE 是 fatal——失败前已 `free_streams`，继续读会输出错位数据（实测 rms 从 0.212 掉到 0.143）。所以无 block index 的文件 seek 先重建上下文再解到目标帧，上限 5 分钟音频，超过则回开头而不假报位置。
+
+已知边界（v1.3.1）：已接 AIFF/AIFC/WavPack；ALAC/APE 待接；WavPack 的 `.wvc` 校正与 hybrid 有损接线正确但未实测；DSD 编码的 `.wv` 明确报「暂不支持」；CUE 分轨暂不支持原生格式（时间片要裁 PCM）；采样率 8k–192k 之外不支持。
 
 ### 4.2 ArkUI 真机坑（2026-11-24 实机踩到）
 这些在编译期全绿、只有在设备上才暴露：

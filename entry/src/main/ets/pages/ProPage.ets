@@ -49,11 +49,12 @@ struct ProPage {
     { name: 'CUE 整轨分轨', desc: '一张整轨 + 一个 CUE，拆成可点播的轨，播放按时间片定位', tag: '已实装' },
     { name: '无缝播放', desc: '双播放器预加载提前切流，或 3 秒交叉淡入淡出', tag: '已实装' },
     { name: '桌面歌词', desc: '系统桌面歌词 + 锁屏歌词 + 播控中心歌词，一份数据三处显示', tag: '已实装' },
-    { name: '自建解码链 · AIFF', desc: '系统解不了的自己解：AIFF / AIFC 直解 PCM 输出', tag: '已实装' }
+    { name: '自建解码链 · AIFF', desc: '系统解不了的自己解：AIFF / AIFC 直解 PCM 输出', tag: '已实装' },
+    { name: '自建解码链 · WavPack', desc: '内嵌 libwavpack：.wv 无损 / hybrid，.wvc 校正文件一并挂上', tag: '已实装' }
   ];
 
   private readonly featNext: ProFeat[] = [
-    { name: '全格式解码', desc: 'APE / ALAC / WavPack：在已通的解码链上再补三种解码器', tag: '下一梯队' },
+    { name: '全格式解码', desc: 'APE / ALAC：在已通的解码链上再补两种解码器', tag: '下一梯队' },
     { name: '变速不变调', desc: '0.5–2.0× 变速，音高不动（依赖自建解码链）', tag: '下一梯队' },
     { name: 'DSD 直读', desc: 'dsf / dff / ISO 解码与 DoP 输出提示', tag: 'Pro 2.0' }
   ];

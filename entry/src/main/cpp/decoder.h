@@ -38,8 +38,11 @@ public:
     virtual void close() = 0;
 };
 
-/** 按 magic + 扩展名创建解码器；不认识的格式返回 nullptr。 */
-AudioSource *CreateSource(const std::string &path);
+/** 按 magic + 扩展名创建解码器；不认识的格式返回 nullptr。
+ *
+ *  why 非空时写入失败原因（文件打不开 / 头不足 / magic 与后缀都不匹配），
+ *  上层直接展示给用户。以前统一报"尚未接入"，对已接入的格式是误导。 */
+AudioSource *CreateSource(const std::string &path, std::string *why = nullptr);
 
 /** 这个扩展名是否由本模块负责解码（ArkTS 侧用同一份白名单做门禁） */
 bool NativeHandlesSuffix(const std::string &suffix);

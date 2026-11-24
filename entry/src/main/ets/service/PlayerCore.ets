@@ -62,6 +62,13 @@ export class PlayerCore {
   private bgRunning: boolean = false;
   private ducked: boolean = false;
   private errorStreak: number = 0;
+  /**
+   * 同一轮起播只处理一次失败。
+   * AVPlayer 进 error 状态后仍会持续回调 error，没有这层守卫时一首坏文件就能把
+   * fail() 打成几十万次（真机日志里 streak 到过 482840，刷屏并且卡住界面）。
+   * 每次 openReal / openNative 开始时复位。
+   */
+  private failHandled: boolean = false;
   private direct: boolean = false;
   private lastNotify: number = 0;
   private lastSessionSync: number = 0;
@@ -771,6 +778,7 @@ export class PlayerCore {
 
   private async openReal(t: Track): Promise<void> {
     await this.releaseReal();
+    this.failHandled = false;
     this.setStatus(Const.ST_LOADING);
     this.notify(true);
     let p: media.AVPlayer;
@@ -815,6 +823,7 @@ export class PlayerCore {
    */
   private async openNative(t: Track): Promise<void> {
     await this.releaseReal();
+    this.failHandled = false;
     this.isNative = true;
     this.setStatus(Const.ST_LOADING);
     this.notify(true);
@@ -1592,8 +1601,14 @@ export class PlayerCore {
   // ---------------- 异常 ----------------
 
   private fail(msg: string): void {
+    if (this.failHandled) {
+      return;   // 同一个失败已经处理过，别被系统重复回调卷进死循环
+    }
+    this.failHandled = true;
     // 起播失败时若还在淡出，先把过渡结算掉：否则旧实例留着出声、界面停在旧曲上不出来
     this.cancelFade(true);
+    // 出错的实例必须释放：AVPlayer 停在 error 状态会持续报错，留着它只会把日志打爆
+    this.releaseReal().catch((e: Object) => Logger.warn(TAG, `release after fail ${e}`));
     this.errorText = msg;
     this.setStatus(Const.ST_ERROR);
     this.stopTicker();

@@ -35,6 +35,10 @@ export class NativePlayer {
   private onInterrupt: ((event: audio.InterruptEvent) => void) | null = null;
   /** 直出模式：旁路系统音效。AudioRenderer 也开放了 setAudioEffectMode，与 AVPlayer 同口径 */
   private direct: boolean = false;
+  /** 输出电平统计：每 2 秒一条 rms 日志 */
+  private rmsSum: number = 0;
+  private rmsCount: number = 0;
+  private rmsNextFrame: number = 0;
 
   /** 这个后缀是否由原生解码器负责 */
   static handles(suffix: string): boolean {
@@ -70,6 +74,9 @@ export class NativePlayer {
     this.durationMs = info.durationMs;
     this.writtenFrames = 0;
     this.ended = false;
+    this.rmsSum = 0;
+    this.rmsCount = 0;
+    this.rmsNextFrame = this.sampleRate * 2;
 
     if (this.channels < 1 || this.channels > 2) {
       this.lastError = `暂不支持 ${this.channels} 声道（当前支持单声道与立体声）`;
@@ -288,9 +295,10 @@ export class NativePlayer {
     const got: Float32Array = new Float32Array(src);
     const gotFrames: number = Math.floor(got.length / this.channels);
     dst.set(got, 0);
+    this.writtenFrames += gotFrames;
+    this.trackLevel(got);
     if (gotFrames < wantFrames) {
       dst.fill(0, got.length);
-      this.writtenFrames += gotFrames;
       if (!this.ended) {
         this.ended = true;
         setTimeout(() => {
@@ -301,8 +309,29 @@ export class NativePlayer {
       }
       return audio.AudioDataCallbackResult.VALID;
     }
-    this.writtenFrames += gotFrames;
     return audio.AudioDataCallbackResult.VALID;
+  }
+
+  /**
+   * 输出电平统计。两条用途：
+   * 1. 判断"进度在走但没声音"——rms 一直 0 就说明解码给的是静音，而不是渲染器的问题；
+   * 2. 核对解码值域——知道了源素材的 RMS 就能反查位深/浮点是否解释错（差 256 倍这类硬错一眼看出）。
+   * 抽样步长 8：44100Hz 下每 8 个样本取一个，对 RMS 是无偏估计，也不至于在音频回调里逐样本比较。
+   */
+  private trackLevel(got: Float32Array): void {
+    for (let i = 0; i < got.length; i += 8) {
+      const v: number = got[i];
+      this.rmsSum += v * v;
+      this.rmsCount++;
+    }
+    if (this.writtenFrames < this.rmsNextFrame) {
+      return;
+    }
+    const rms: number = this.rmsCount > 0 ? Math.sqrt(this.rmsSum / this.rmsCount) : 0;
+    Logger.info(TAG, `level rms=${rms.toFixed(3)} @${this.getPositionMs()}ms`);
+    this.rmsSum = 0;
+    this.rmsCount = 0;
+    this.rmsNextFrame = this.writtenFrames + this.sampleRate * 2;
   }
 
   private release(): void {
@@ -325,5 +354,8 @@ export class NativePlayer {
     this.playing = false;
     this.ended = false;
     this.writtenFrames = 0;
+    this.rmsSum = 0;
+    this.rmsCount = 0;
+    this.rmsNextFrame = 0;
   }
 }
