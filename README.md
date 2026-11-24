@@ -9,6 +9,17 @@
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（2.05 MB，已签名可直接 `hdc install`）
 - 代码规模：50 个 `.ets`，约 14,000 行
 - 当前版本：v1.2.1（Pro 1.5：CUE 分轨 · 无缝播放 + 交叉淡入淡出 · 桌面/锁屏歌词 · 全格式识别层；1.2.1 修淡入淡出期间界面提前跳曲）
+- 文档：全部收在 [`docs/`](docs/)，见下方文档索引
+
+### 文档索引
+
+| 文档 | 内容 |
+|---|---|
+| [真机验证报告](docs/密纹音乐-真机验证报告.md) | 每轮真机验证的断言项、结论、暴露的问题与修复，含未覆盖项 |
+| [交付说明](docs/密纹音乐-交付说明.md) | 交付物清单、能力清单、已知边界与诚实说明 |
+| [收费版本功能规划](docs/密纹音乐-付费版功能规划.md) | 免费 / Pro 怎么切、四个梯队、定价与验收口径 |
+| [Pro 版技术验证](docs/密纹音乐-Pro版技术验证.md) | EQ 不可行的证据、直出模式与实装验证 |
+| [界面验收稿](docs/密纹音乐-界面验收稿.html) | 6 屏可视稿（5 手机 + 1 平板），浏览器直接打开，可切主题 |
 
 ---
 
@@ -305,7 +316,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 ## 9. 验收清单
 
 > 2026-11-24 已在 HUAWEI MLN-AL00（HarmonyOS 7.0.0.111 / API 26）实机跑过一遍，
-> 逐条结论、发现的问题与修复见 `../密纹音乐-真机验证报告.md`。
+> 逐条结论、发现的问题与修复见 [`docs/密纹音乐-真机验证报告.md`](docs/密纹音乐-真机验证报告.md)。
 > 下表 `[x]` 为实机已确认，`[ ]` 为需要你用自己的音乐目录复核的项。
 
 ### 9.1 首页
@@ -398,5 +409,5 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 
 ## 12. 界面验收稿
 
-`../密纹音乐-界面验收稿.html`（浏览器直接打开）：5 个手机屏 + 1 个平板屏，可切暗夜/白纸/磁带。
+[`docs/密纹音乐-界面验收稿.html`](docs/密纹音乐-界面验收稿.html)（浏览器直接打开）：5 个手机屏 + 1 个平板屏，可切暗夜/白纸/磁带。
 色值、字号、间距与 `common/Theme.ets`、各页面 vp 数值对齐，改样式时两边一起改。

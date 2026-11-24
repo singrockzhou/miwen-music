@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>密纹音乐 · 界面验收稿</title>
+<style>
+  :root {
+    --bg: #0B0B0D; --bg-deep: #08080A; --surface: #141416; --surface-alt: #17171A;
+    --line: #232327; --line-soft: #1C1C20;
+    --text: #F4EFE6; --dim: #8E8778; --faint: #6E6A61;
+    --accent: #C8A96A; --accent-deep: #8A6E3E; --accent-wash: #1F1A12;
+    --groove: #26262B; --danger: #C2623A;
+    --page: #0A0A0C; --paper: #101013; --on-accent: #0B0B0D;
+  }
+  body[data-theme="paper"] {
+    --bg: #FBF9F6; --bg-deep: #F4EFE6; --surface: #FFFFFF; --surface-alt: #F4F0E8;
+    --line: #E2DBD0; --line-soft: #EDE6D9;
+    --text: #17171A; --dim: #6C6A63; --faint: #8E8778;
+    --accent: #A8792E; --accent-deep: #C8A96A; --accent-wash: #F5EBD8;
+    --groove: #E7DFD2; --danger: #B4552B;
+    --page: #F2EDE4; --paper: #FFFFFF; --on-accent: #FFFFFF;
+  }
+  body[data-theme="tape"] {
+    --bg: #1A1512; --bg-deep: #140F0D; --surface: #221B16; --surface-alt: #2A211A;
+    --line: #3A2E24; --line-soft: #302620;
+    --text: #F0E3CE; --dim: #A08B72; --faint: #7E6A55;
+    --accent: #C8A96A; --accent-deep: #9A7B45; --accent-wash: #2B2118;
+    --groove: #3A2E24; --danger: #C2623A;
+    --page: #14100D; --paper: #1F1913; --on-accent: #1A1512;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--page); color: var(--text);
+    font-family: "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; padding: 40px 28px 80px; transition: background .25s;
+  }
+
+  .doc-head { max-width: 1460px; margin: 0 auto 24px; display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  .doc-title { font-size: 26px; font-weight: 700; letter-spacing: 3px; }
+  .doc-title span { color: var(--accent); }
+  .doc-en { font-size: 10px; letter-spacing: 3px; color: var(--faint); margin-top: 8px; }
+  .doc-meta { margin-left: auto; font-size: 11px; color: var(--dim); line-height: 1.9; text-align: right; }
+
+  .toolbar { max-width: 1460px; margin: 0 auto 26px; display: flex; gap: 10px; align-items: center; }
+  .toolbar .label { font-size: 10px; letter-spacing: 2px; color: var(--faint); margin-right: 6px; }
+  .tbtn {
+    font-size: 11px; letter-spacing: 1px; color: var(--dim); background: transparent;
+    border: 1px solid var(--line); padding: 7px 14px; cursor: pointer; border-radius: 0;
+    font-family: inherit; transition: all .2s;
+  }
+  .tbtn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-deep); }
+  .toolbar .note { margin-left: auto; font-size: 10px; color: var(--faint); }
+
+  .stage { max-width: 1460px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start; }
+  figure { width: 300px; }
+  .frame { width: 300px; height: 649.2px; overflow: hidden; }
+  .frame.wide { width: 640px; height: 475.6px; }
+  figcaption { margin-top: 10px; font-size: 10px; color: var(--dim); letter-spacing: .4px; display: flex; gap: 6px; align-items: baseline; }
+  figcaption b { color: var(--text); font-weight: 500; }
+  figcaption span { font-size: 9px; color: var(--faint); }
+  figcaption em { font-style: normal; color: var(--faint); font-size: 8px; margin-left: auto; letter-spacing: 1px; }
+
+  /* 390×844 等比缩到 300 宽：0.769 */
+  .phone {
+    width: 390px; height: 844px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 34px; overflow: hidden; position: relative;
+    transform: scale(.7692); transform-origin: top left;
+    box-shadow: 0 18px 44px rgba(0,0,0,.35);
+  }
+  .phone.wide { width: 834px; height: 620px; border-radius: 22px; transform: scale(.7674); }
+  .statusbar { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font-size: 11px; color: var(--dim); letter-spacing: .5px; }
+  .statusbar .dotrow { display: flex; gap: 4px; }
+  .statusbar i { display: block; width: 4px; height: 4px; background: var(--dim); border-radius: 50%; }
+
+  .scroll { height: calc(100% - 40px); overflow: hidden; position: relative; }
+  .pad { padding: 0 20px; }
+
+  .brand-row { display: flex; align-items: flex-end; justify-content: space-between; padding: 8px 0 14px; }
+  .brand { font-size: 25px; font-weight: 700; letter-spacing: 3px; line-height: 1; }
+  .brand em { font-style: normal; color: var(--accent); }
+  .brand-sub { font-size: 9px; color: var(--dim); letter-spacing: .5px; margin-top: 7px; }
+  .ghost { font-size: 10px; color: var(--dim); letter-spacing: 1px; border: .5px solid var(--line); padding: 7px 11px; background: transparent; }
+
+  .sec-head { display: flex; align-items: baseline; gap: 8px; padding: 18px 0 12px; }
+  .sec-head b { font-size: 12px; font-weight: 500; letter-spacing: .6px; }
+  .sec-head i { font-style: normal; font-size: 7px; color: var(--faint); letter-spacing: 1.6px; }
+  .sec-head .more { margin-left: auto; font-size: 9px; color: var(--dim); }
+
+  .sleeve { position: relative; width: 100%; aspect-ratio: 1; background: var(--c, #2B3A55); overflow: hidden; display: block; }
+  .sleeve .rings {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 0 38.5%, rgba(200,169,106,.10) 38.5% 39%, transparent 39% 43.8%, rgba(200,169,106,.13) 43.8% 44.3%, transparent 44.3% 49%, rgba(200,169,106,.16) 49% 49.5%, transparent 49.5%);
+  }
+  .sleeve .mono { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 58px; font-weight: 700; color: #F4EFE6; opacity: .16; }
+  .sleeve .cap { position: absolute; left: 10px; right: 10px; bottom: 9px; color: #F4EFE6; }
+  .sleeve .cap .rule { display: block; width: 18px; height: 1px; background: rgba(200,169,106,.7); margin-bottom: 5px; }
+  .sleeve .cap b { display: block; font-size: 9px; font-weight: 500; letter-spacing: .5px; opacity: .92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sleeve .cap i { display: block; font-style: normal; font-size: 7px; opacity: .55; margin-top: 2px; letter-spacing: .4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sleeve::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12); }
+
+  .recent { display: flex; gap: 12px; overflow: hidden; }
+  .recent > div { width: 104px; flex: none; }
+  .recent .t { font-size: 10px; margin-top: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent .s { font-size: 8px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .wall { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 14px; }
+  .wall .t { font-size: 11px; font-weight: 500; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wall .m { display: flex; justify-content: space-between; font-size: 8px; color: var(--dim); margin-top: 3px; }
+  .wall .m span:last-child { color: var(--faint); }
+
+  .foot { text-align: center; padding: 20px 0 10px; }
+  .foot .l1 { font-size: 8px; color: var(--dim); letter-spacing: .8px; }
+  .foot .l2 { font-size: 7px; color: var(--faint); margin-top: 5px; letter-spacing: .6px; }
+
+  .mini { position: absolute; left: 0; right: 0; bottom: 56px; background: var(--surface); }
+  .mini .bar { height: 1px; background: var(--line-soft); }
+  .mini .bar i { display: block; height: 1px; width: 37%; background: var(--accent); }
+  .mini .row { display: flex; align-items: center; gap: 11px; padding: 8px 10px 8px 14px; }
+  .mini .row .mini-cover { width: 38px; height: 38px; flex: none; }
+  .mini .tt { font-size: 12px; }
+  .mini .ss { font-size: 9px; color: var(--dim); margin-top: 3px; display: flex; gap: 6px; align-items: center; }
+  .mini .tag { font-size: 7px; color: var(--accent); border: .5px solid var(--accent-deep); padding: 1px 4px; }
+  .mini .play { margin-left: auto; color: var(--accent); font-size: 15px; padding: 0 12px; }
+
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--surface); border-top: .5px solid var(--line-soft); display: flex; }
+  .tabbar div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 10px; color: var(--faint); letter-spacing: 1.2px; }
+  .tabbar div.on { color: var(--text); }
+  .tabbar div.on::before { content: ""; width: 16px; height: 1px; background: var(--accent); margin-bottom: 0; }
+
+  .search { display: flex; align-items: center; justify-content: space-between; background: var(--surface-alt); height: 36px; padding: 0 10px; font-size: 12px; color: var(--faint); margin-top: 12px; }
+  .sorttabs { display: flex; gap: 18px; margin-top: 18px; align-items: flex-end; }
+  .sorttabs div { font-size: 11px; color: var(--faint); padding-bottom: 7px; border-bottom: 1px solid transparent; }
+  .sorttabs div.on { color: var(--text); border-bottom-color: var(--accent); }
+  .sorttabs .view { margin-left: auto; font-size: 10px; color: var(--dim); border: none; }
+  .chips { display: flex; gap: 14px; margin-top: 10px; font-size: 9px; color: var(--faint); }
+  .chips .on { color: var(--accent); }
+
+  .rows { margin-top: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; height: 56px; border-bottom: .5px solid var(--line-soft); }
+  .row .idx { width: 22px; font-size: 10px; color: var(--faint); text-align: center; }
+  .row .thumb { width: 42px; height: 42px; flex: none; }
+  .row .thumb .sleeve .mono { font-size: 16px; }
+  .row .thumb .sleeve .cap { display: none; }
+  .row .body { flex: 1; min-width: 0; }
+  .row .tt { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+  .row .tt .mark { width: 2px; height: 11px; background: var(--accent); display: inline-block; flex: none; }
+  .row.on .tt { color: var(--accent); }
+  .row .mm { font-size: 9px; color: var(--dim); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .rt { text-align: right; flex: none; }
+  .row .rt .f { font-size: 8px; color: var(--faint); letter-spacing: .3px; }
+  .row .rt .d { font-size: 9px; color: var(--faint); margin-top: 3px; }
+
+  .segtabs { display: flex; gap: 22px; margin-top: 16px; }
+  .segtabs div { font-size: 12px; color: var(--faint); padding-bottom: 8px; border-bottom: 1px solid transparent; display: flex; gap: 5px; align-items: baseline; }
+  .segtabs div.on { color: var(--text); border-bottom-color: var(--accent); }
+  .segtabs div s { text-decoration: none; font-size: 8px; color: var(--faint); }
+  .actions { display: flex; align-items: center; gap: 8px; padding: 14px 0 2px; }
+  .btn-accent { background: var(--accent); color: var(--on-accent); font-size: 10px; padding: 8px 16px; }
+  .btn-line { border: .5px solid var(--line); color: var(--dim); font-size: 10px; padding: 8px 14px; }
+  .actions .sum { margin-left: auto; font-size: 8px; color: var(--faint); }
+  .plrow { display: flex; align-items: center; height: 58px; border-bottom: .5px solid var(--line-soft); }
+
+  .set-title { display: flex; align-items: baseline; justify-content: space-between; padding: 22px 0 8px; }
+  .set-title b { font-size: 10px; color: var(--accent); letter-spacing: 1.4px; font-weight: 500; }
+  .set-title i { font-style: normal; font-size: 7px; color: var(--faint); letter-spacing: 1.6px; }
+  .set-row { display: flex; align-items: center; min-height: 48px; border-bottom: .5px solid var(--line-soft); font-size: 12px; }
+  .set-row .v { margin-left: auto; font-size: 10px; color: var(--dim); }
+  .swatch { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; margin-right: 12px; border: .5px solid var(--line); }
+  .swatch i { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: block; }
+  .set-row .sub { font-size: 7px; color: var(--faint); margin-top: 3px; letter-spacing: 1px; }
+  .set-row .pick { margin-left: auto; font-size: 11px; color: var(--accent); }
+  .stats { display: flex; padding: 16px 0; gap: 10px; }
+  .stats div { flex: 1; }
+  .stats .k { font-size: 8px; color: var(--faint); }
+  .stats .n { font-size: 18px; font-weight: 700; margin-top: 3px; }
+  .stats .x { font-size: 9px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
+
+  .ptop { display: flex; align-items: center; padding: 0 16px; height: 40px; }
+  .ptop .back { font-size: 22px; color: var(--dim); width: 44px; }
+  .ptop .mid { flex: 1; text-align: center; font-size: 8px; color: var(--faint); letter-spacing: 1.2px; }
+  .ptop .q { width: 66px; text-align: right; font-size: 9px; color: var(--dim); }
+  .ringwrap { position: relative; width: 300px; height: 300px; margin: 10px auto 0; }
+  .ringwrap svg { position: absolute; inset: 0; }
+  .ringwrap .cover { position: absolute; left: 50%; top: 50%; width: 236px; height: 236px; transform: translate(-50%, -50%); }
+  .ptitle { text-align: left; padding: 20px 26px 0; }
+  .ptitle b { font-size: 21px; letter-spacing: .4px; display: block; font-weight: 700; }
+  .ptitle .m { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--dim); }
+  .ptitle .badge { font-size: 7px; color: var(--accent); border: .5px solid var(--accent-deep); padding: 1px 4px; }
+  .lyric { text-align: center; padding: 16px 26px 0; height: 52px; }
+  .lyric .cur { font-size: 13px; }
+  .lyric .nxt { font-size: 10px; color: var(--faint); margin-top: 7px; }
+  .slider { padding: 12px 22px 0; }
+  .slider .track { position: relative; height: 1px; background: var(--line); }
+  .slider .track i { position: absolute; left: 0; top: 0; height: 1px; width: 31%; background: var(--accent); }
+  .slider .track b { position: absolute; left: 31%; top: -2.5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .slider .times { display: flex; justify-content: space-between; font-size: 8px; color: var(--faint); margin-top: 8px; }
+  .pctrl { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 0; }
+  .pctrl .mode { font-size: 9px; color: var(--dim); width: 48px; letter-spacing: .5px; }
+  .pctrl .skip { font-size: 28px; color: var(--dim); width: 46px; text-align: center; line-height: 1; }
+  .pctrl .playbtn { width: 66px; height: 66px; border: 1px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .pctrl .playbtn .tri { width: 0; height: 0; border-left: 16px solid var(--accent); border-top: 10px solid transparent; border-bottom: 10px solid transparent; margin-left: 4px; }
+  .pctrl .playbtn .pause { display: flex; gap: 5px; }
+  .pctrl .playbtn .pause i { width: 3px; height: 18px; background: var(--accent); display: block; }
+  .pctrl .fav { width: 48px; text-align: center; font-size: 7px; color: var(--faint); }
+  .pctrl .fav em { font-style: normal; display: block; font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+  .pctrl .fav.on em { color: var(--accent); }
+  .pfoot { position: absolute; left: 0; right: 0; bottom: 20px; text-align: center; font-size: 8px; color: var(--faint); letter-spacing: 1px; }
+
+  .split { display: flex; height: calc(100% - 40px); }
+  .split .l { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .split .r { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 30px; }
+  .split .r .ptitle { padding: 0; text-align: center; }
+  .split .r .ptitle .m { justify-content: center; }
+  .split .r .lyric { padding-left: 0; padding-right: 0; }
+
+  .legend { max-width: 1460px; margin: 40px auto 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .lg { border-top: .5px solid var(--line); padding-top: 12px; }
+  .lg b { font-size: 10px; font-weight: 500; letter-spacing: .8px; display: block; }
+  .lg p { font-size: 9px; color: var(--dim); line-height: 1.8; margin-top: 6px; }
+  .lg code { font-family: ui-monospace, Consolas, monospace; font-size: 8px; color: var(--accent); }
+
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="doc-head">
+  <div>
+    <div class="doc-title">密纹<span>·</span>音乐</div>
+    <div class="doc-en">INTERFACE ACCEPTANCE SHEET / HARMONYOS 5+</div>
+  </div>
+  <div class="doc-meta">
+    界面验收稿 v1.0 · 2026.11.24<br>
+    与 entry/src 同源：色值、字号、间距逐项对齐<br>
+    零联网 · 零账号 · 一次买断
+  </div>
+</div>
+
+<div class="toolbar">
+  <span class="label">主题</span>
+  <button class="tbtn" data-set="dark" aria-pressed="true">暗夜</button>
+  <button class="tbtn" data-set="paper" aria-pressed="false">白纸</button>
+  <button class="tbtn" data-set="tape" aria-pressed="false">磁带</button>
+  <span class="note">点击切换，检查三套主题下文字对比度与铜金明度</span>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<div class="legend">
+  <div class="lg">
+    <b>唯一色源</b>
+    <p>底色永远是 <code>#0B0B0D</code>，界面里唯一的高饱和来自封套。铜金 <code>#C8A96A</code> 只出现在落针点、进度、当前项——不铺面积，不做渐变按钮。</p>
+  </div>
+  <div class="lg">
+    <b>封面墙优先</b>
+    <p>首页是 2 列封套（平板 4~5 列），无边框、无圆角、无卡片阴影；标题只给专辑名，艺人降到 8px 灰字。</p>
+  </div>
+  <div class="lg">
+    <b>环即进度</b>
+    <p>播放页 3 圈不等距沟槽 + 1 个落针点，进度直接长在最外圈。封面 236vp / 环 300vp，一屏只有一个焦点。</p>
+  </div>
+  <div class="lg">
+    <b>密度换信任</b>
+    <p>曲库页一屏 9 行，右侧直接给格式与采样率。无损党不用点进详情就知道是不是自己要的那一版。</p>
+  </div>
+</div>
+
+<script>
+const SLEEVES = ['#2B3A55', '#5A2E3A', '#2E4A3F', '#4B3A66', '#2B6E8F', '#8A4B2B', '#44444F', '#6B5A2E'];
+const ALBUMS = [
+  { name: '沟槽', artist: '密纹室内乐团', n: 4, rate: 'FLAC 192kHz', c: 0, mono: '沟' },
+  { name: '夜航西飞', artist: '木星频率', n: 4, rate: 'FLAC 96kHz', c: 4, mono: '夜' },
+  { name: '磁带年代', artist: '旧日电波', n: 3, rate: 'MP3 320k', c: 5, mono: '磁' },
+  { name: '白纸', artist: '陈默', n: 4, rate: 'FLAC 96kHz', c: 2, mono: '白' },
+];
+const TRACKS = [
+  { t: '落针', m: '密纹室内乐团 · 沟槽', f: 'FLAC · 96 kHz', d: '04:22', on: true, c: 0, mono: '沟' },
+  { t: '一圈半', m: '密纹室内乐团 · 沟槽', f: 'FLAC · 96 kHz', d: '03:34', c: 0, mono: '沟' },
+  { t: '夜航', m: '木星频率 · 夜航西飞', f: 'FLAC · 48 kHz', d: '04:06', c: 4, mono: '夜' },
+  { t: '卡带 A 面', m: '旧日电波 · 磁带年代', f: 'MP3 · 44.1 kHz', d: '03:52', c: 5, mono: '磁' },
+  { t: '白纸', m: '陈默 · 白纸', f: 'FLAC · 96 kHz', d: '03:28', c: 2, mono: '白' },
+  { t: '铜', m: '密纹三重奏 · 铜与纸', f: 'FLAC · 192 kHz', d: '04:01', c: 3, mono: '铜' },
+  { t: '骑楼', m: '林深 · 雨落在旧城区', f: 'M4A · 48 kHz', d: '03:46', c: 6, mono: '骑' },
+  { t: '电离层', m: '木星频率 · 夜航西飞', f: 'FLAC · 96 kHz', d: '05:22', c: 4, mono: '电' },
+];
+
+function sleeve(a, cls) {
+  return `<div class="sleeve ${cls || ''}" style="--c:${SLEEVES[a.c % 8]}">
+    <div class="rings"></div>
+    <div class="mono">${a.mono}</div>
+    <div class="cap"><span class="rule"></span><b>${a.name}</b><i>${a.artist}</i></div>
+  </div>`;
+}
+function sleeveSmall(a) {
+  return `<div class="sleeve" style="--c:${SLEEVES[a.c % 8]}"><div class="rings"></div><div class="mono" style="font-size:15px">${a.mono}</div></div>`;
+}
+
+function tabbar(active) {
+  const items = ['首页', '曲库', '我的', '设置'];
+  return `<div class="tabbar">${items.map((x, i) => `<div class="${i === active ? 'on' : ''}">${x}</div>`).join('')}</div>`;
+}
+function mini(show) {
+  if (!show) return '';
+  return `<div class="mini">
+    <div class="bar"><i></i></div>
+    <div class="row">
+      <div class="mini-cover">${sleeveSmall(ALBUMS[0])}</div>
+      <div style="min-width:0">
+        <div class="tt">落针</div>
+        <div class="ss">密纹室内乐团 <span class="tag">示例</span></div>
+      </div>
+      <div class="play">Ⅱ</div>
+    </div>
+  </div>`;
+}
+
+/* ---------- 首页 ---------- */
+const home = `
+<div class="phone"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll"><div class="pad">
+  <div class="brand-row">
+    <div><div class="brand">密纹<em>·</em>音乐</div><div class="brand-sub">22 首 · 只在你这台设备上</div></div>
+    <div class="ghost">搜 索</div>
+  </div>
+  <div style="border-top:.5px solid var(--line-soft); border-bottom:.5px solid var(--line-soft); padding:8px 0; display:flex; align-items:center; gap:8px">
+    <span style="background:var(--accent); color:var(--on-accent); font-size:8px; padding:2px 5px">示例</span>
+    <span style="font-size:9px; color:var(--dim); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">这些是内置示例唱片，先把播放器跑通</span>
+    <span style="font-size:9px; color:var(--accent)">换成我的</span>
+  </div>
+  <div class="sec-head"><b>最近在听</b><i>RECENT</i></div>
+  <div class="recent">
+    ${[0, 1, 2, 3].map(i => {
+      const a = ALBUMS[i];
+      const names = ['落针', '夜航', '卡带 A 面', '白纸'];
+      return `<div>${sleeveSmall(a)}<div class="t">${names[i]}</div><div class="s">${a.artist}</div></div>`;
+    }).join('')}
+  </div>
+  <div class="sec-head"><b>唱片墙</b><span style="font-size:7px;color:var(--faint)">4 张</span><span class="more">全部曲目 ›</span></div>
+  <div class="wall">
+    ${ALBUMS.map(a => `<div>${sleeve(a)}<div class="t">${a.name}</div><div class="m"><span>${a.artist}</span><span>${a.n} 首</span></div></div>`).join('')}
+  </div>
+  <div class="foot"><div class="l1">零联网 · 零账号 · 不上传任何文件</div><div class="l2">密纹音乐 v1.0.0 · 本地曲库 22 首</div></div>
+</div></div>
+${mini(true)}${tabbar(0)}</div>`;
+
+/* ---------- 曲库 ---------- */
+const library = `
+<div class="phone"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll"><div class="pad">
+  <div style="display:flex; align-items:center; padding-top:8px">
+    <div style="font-size:15px; font-weight:700; letter-spacing:1.4px">曲库</div>
+    <div style="font-size:7px; color:var(--faint); margin-left:7px">22 首</div>
+    <div class="ghost" style="margin-left:auto">选择文件夹</div>
+  </div>
+  <div class="search"><span>搜歌名、艺人、专辑</span><span style="font-size:7px; color:var(--dim)">清空</span></div>
+  <div class="sorttabs">
+    <div class="on">最近添加</div><div>标题</div><div>艺人</div><div>采样率</div>
+    <div class="view">封面</div>
+  </div>
+  <div class="chips"><span class="on">全部</span><span>FLAC</span><span>MP3</span><span>M4A</span></div>
+  <div class="rows">
+    ${TRACKS.map((t, i) => `<div class="row ${t.on ? 'on' : ''}">
+      <div class="thumb">${sleeveSmall(t)}</div>
+      <div class="body">
+        <div class="tt">${t.on ? '<span class="mark"></span>' : ''}${t.t}</div>
+        <div class="mm">${t.m}</div>
+      </div>
+      <div class="rt"><div class="f">${t.f}</div><div class="d">${t.d}</div></div>
+    </div>`).join('')}
+  </div>
+  <div style="text-align:center; font-size:7px; color:var(--faint); padding:10px 0 4px">上滑加载更多</div>
+</div></div>
+${mini(true)}${tabbar(1)}</div>`;
+
+/* ---------- 我的（收藏） ---------- */
+const collection = `
+<div class="phone"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll"><div class="pad">
+  <div style="display:flex; align-items:baseline; padding-top:8px">
+    <div style="font-size:15px; font-weight:700; letter-spacing:1.4px">我的</div>
+    <div style="margin-left:auto; font-size:6px; color:var(--faint); letter-spacing:1.8px">COLLECTION</div>
+  </div>
+  <div class="segtabs"><div class="on">收藏 <s>6</s></div><div>歌单 <s>2</s></div><div>最近 <s>12</s></div></div>
+  <div class="actions">
+    <div class="btn-accent">播放全部</div><div class="btn-line">随机</div>
+    <div class="sum">6 首 · 21 分钟</div>
+  </div>
+  <div class="rows">
+    ${TRACKS.slice(0, 6).map(t => `<div class="row ${t.on ? 'on' : ''}">
+      <div class="thumb">${sleeveSmall(t)}</div>
+      <div class="body"><div class="tt">${t.on ? '<span class="mark"></span>' : ''}${t.t}</div><div class="mm">${t.m}</div></div>
+      <div class="rt"><div class="f">${t.f}</div><div class="d">${t.d}</div></div>
+    </div>`).join('')}
+  </div>
+</div></div>
+${mini(true)}${tabbar(2)}</div>`;
+
+/* ---------- 设置 ---------- */
+const settings = `
+<div class="phone"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll"><div class="pad">
+  <div style="display:flex; align-items:baseline; padding-top:8px">
+    <div style="font-size:15px; font-weight:700; letter-spacing:1.4px">设置</div>
+    <div style="margin-left:auto; font-size:7px; color:var(--faint)">v1.0.0</div>
+  </div>
+
+  <div class="set-title"><b>外观</b><i>APPEARANCE</i></div>
+  <div class="set-row"><div class="swatch" style="background:#0B0B0D"><i></i></div><div>暗夜<div class="sub">NIGHT · 默认</div></div><div class="pick">●</div></div>
+  <div class="set-row"><div class="swatch" style="background:#FBF9F6"><i></i></div><div>白纸<div class="sub">PAPER · 浅色</div></div></div>
+  <div class="set-row"><div class="swatch" style="background:#1A1512"><i></i></div><div>磁带<div class="sub">TAPE · 拟物</div></div></div>
+
+  <div class="set-title"><b>曲库</b><i>LIBRARY</i></div>
+  <div class="set-row">当前：示例唱片<div class="v">22 首</div></div>
+  <div class="set-row" style="font-size:8px; color:var(--faint); line-height:1.7; padding:6px 0">示例数据只用于体验播放与整理，换成自己的文件夹后会自动让位。</div>
+  <div class="set-row">选择音乐文件夹<div class="v">›</div></div>
+  <div class="set-row">重新扫描当前目录<div class="v">›</div></div>
+  <div class="set-row">载入示例曲库<div class="v">›</div></div>
+  <div class="set-row" style="color:var(--danger)">清空曲库索引<div class="v">›</div></div>
+  <div class="stats">
+    <div><div class="k">曲目</div><div class="n">22</div></div>
+    <div><div class="k">占用</div><div class="n">1.4<span style="font-size:8px"> GB</span></div></div>
+    <div><div class="k">格式</div><div class="x">FLAC 12 · MP3 6 · M4A 4</div></div>
+  </div>
+
+  <div class="set-title"><b>播放</b><i>PLAYBACK</i></div>
+  <div class="set-row" style="display:block; padding:8px 0">
+    <div style="font-size:9px; margin-bottom:8px">默认播放模式</div>
+    <div style="display:flex; gap:6px">
+      <span style="background:var(--accent); color:#0B0B0D; font-size:8px; padding:5px 10px">列表循环</span>
+      <span style="border:.5px solid var(--line); color:var(--dim); font-size:8px; padding:5px 10px">单曲循环</span>
+      <span style="border:.5px solid var(--line); color:var(--dim); font-size:8px; padding:5px 10px">随机播放</span>
+    </div>
+  </div>
+  <div class="set-row">睡眠定时<div class="v">关闭 ›</div></div>
+  <div class="set-row">音频焦点<div class="v">已启用 DUCK</div></div>
+  <div class="set-row" style="font-size:7px; color:var(--faint); line-height:1.7; padding:6px 0">导航播报时音乐降到 30% 而不是暂停；来电暂停，挂断后从原位置继续。</div>
+
+  <div class="set-title"><b>关于</b><i>ABOUT</i></div>
+  <div class="set-row">密纹音乐<div class="v">v1.0.0</div></div>
+  <div class="set-row">权限说明<div class="v">无网络权限</div></div>
+  <div style="text-align:center; font-size:6px; color:var(--faint); letter-spacing:1px; padding:18px 0 8px">密纹音乐 · 单机版 · 2026</div>
+</div></div>
+${mini(false)}${tabbar(3)}</div>`;
+
+/* ---------- 播放页 ---------- */
+function ring(progress) {
+  const r = 146, cx = 150, cy = 150;
+  const circ = 2 * Math.PI * r;
+  const ang = -Math.PI / 2 + 2 * Math.PI * progress;
+  const nx = cx + r * Math.cos(ang), ny = cy + r * Math.sin(ang);
+  return `<svg viewBox="0 0 300 300" width="300" height="300">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--accent-deep)" stroke-width=".8"/>
+    <circle cx="${cx}" cy="${cy}" r="${r * 0.918}" fill="none" stroke="var(--groove)" stroke-width=".8"/>
+    <circle cx="${cx}" cy="${cy}" r="${r * 0.852}" fill="none" stroke="var(--groove)" stroke-width=".8"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="1.4"
+      stroke-dasharray="${circ * progress} ${circ}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="round"/>
+    <circle cx="${nx}" cy="${ny}" r="2.6" fill="var(--accent)"/>
+  </svg>`;
+}
+
+const player = `
+<div class="phone"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll">
+  <div class="ptop"><div class="back">⌄</div><div class="mid">示例唱片 · 无真实音频</div><div class="q">队列 1/22</div></div>
+  <div class="ringwrap">${ring(0.31)}<div class="cover">${sleeve(ALBUMS[0])}</div></div>
+  <div class="ptitle"><b>落针</b><div class="m"><span>密纹室内乐团 · 沟槽</span><span class="badge">FLAC</span><span style="color:var(--faint)">96 kHz</span></div></div>
+  <div class="lyric">
+    <div class="cur">第一圈沟槽里藏着上一年的雨</div>
+    <div class="nxt">我们把它转成 33 又三分之一</div>
+  </div>
+  <div class="slider">
+    <div class="track"><i></i><b></b></div>
+    <div class="times"><span>01:21</span><span>-03:01</span></div>
+  </div>
+  <div class="pctrl">
+    <div class="mode">列表</div>
+    <div class="skip">‹</div>
+    <div class="playbtn"><div class="pause"><i></i><i></i></div></div>
+    <div class="skip">›</div>
+    <div class="fav"><em>○</em>收藏</div>
+  </div>
+  <div class="pfoot">全本地 · 不上传</div>
+</div></div>`;
+
+const tablet = `
+<div class="phone wide"><div class="statusbar"><span>9:41</span><span class="dotrow"><i></i><i></i><i></i></span></div>
+<div class="scroll"><div class="split">
+  <div class="l"><div class="ringwrap" style="width:320px;height:320px">${ring(0.31)}<div class="cover" style="width:252px;height:252px">${sleeve(ALBUMS[0])}</div></div></div>
+  <div class="r">
+    <div class="ptitle"><b>落针</b><div class="m"><span>密纹室内乐团 · 沟槽</span><span class="badge">FLAC</span><span style="color:var(--faint)">96 kHz</span></div></div>
+    <div class="lyric" style="margin-top:12px"><div class="cur">第一圈沟槽里藏着上一年的雨</div><div class="nxt">我们把它转成 33 又三分之一</div></div>
+    <div class="slider" style="padding-left:0;padding-right:0"><div class="track"><i></i><b></b></div><div class="times"><span>01:21</span><span>-03:01</span></div></div>
+    <div class="pctrl" style="padding-left:0;padding-right:0">
+      <div class="mode">列表</div><div class="skip">‹</div>
+      <div class="playbtn"><div class="pause"><i></i><i></i></div></div>
+      <div class="skip">›</div><div class="fav"><em>○</em>收藏</div>
+    </div>
+    <div style="text-align:center; font-size:6px; color:var(--faint); letter-spacing:1px; margin-top:18px">全本地 · 不上传</div>
+  </div>
+</div></div></div>`;
+
+const frames = [
+  ['首页', '封面墙 / 最近在听 / 示例提示', home, ''],
+  ['曲库', '搜索 / 排序 / 格式筛选 / 高密度列表', library, ''],
+  ['我的', '收藏 / 歌单 / 最近', collection, ''],
+  ['设置', '外观 / 曲库 / 播放 / 关于', settings, ''],
+  ['播放页', '沟槽进度环 / 两行歌词 / 主控', player, ''],
+  ['平板播放', '≥600vp 左右分栏', tablet, 'wide'],
+];
+
+document.getElementById('stage').innerHTML = frames.map(f => `
+  <figure>
+    <div class="frame ${f[3] === 'wide' ? 'wide' : ''}">${f[2]}</div>
+    <figcaption><b>${f[0]}</b><span>${f[1]}</span><em>${f[3] === 'wide' ? 'TABLET 834×620' : '390×844'}</em></figcaption>
+  </figure>`).join('');
+
+function applyTheme(name) {
+  document.body.dataset.theme = name;
+  document.querySelectorAll('.tbtn').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.set === name)));
+}
+document.querySelectorAll('.tbtn').forEach(b => {
+  b.addEventListener('click', () => applyTheme(b.dataset.set));
+});
+// 支持 #paper / #tape 直达，便于逐主题截图核对
+const hash = location.hash.replace('#', '');
+if (['dark', 'paper', 'tape'].indexOf(hash) >= 0) applyTheme(hash);
+</script>
+</body>
+</html>
