@@ -835,6 +835,13 @@ export class PlayerCore {
       this.native = null;
       this.isNative = false;
       np.stop().catch((e: Object) => Logger.warn(TAG, `${e}`));
+      // m4a 容器里未必是 ALAC（AAC/MP3 也走这个容器）：native 报「mp4 容器非 ALAC」
+      // 说明系统本来就能解，回退 AVPlayer，不给用户报错。
+      if (why.startsWith('mp4 容器非 ALAC')) {
+        Logger.info(TAG, `m4a 非 ALAC（${why}），回退 AVPlayer`);
+        await this.openReal(t);
+        return;
+      }
       this.fail(`原生解码打不开：${why}`);
       return;
     }

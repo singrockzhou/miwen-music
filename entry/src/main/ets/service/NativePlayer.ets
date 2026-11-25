@@ -1,6 +1,6 @@
 import { audio } from '@kit.AudioKit';
 import { open as decOpen, read as decRead, seek as decSeek, close as decClose,
-  handles as decHandles, version as decVersion } from 'libmiwen.so';
+  handles as decHandles, version as decVersion, stats as decStats } from 'libmiwen.so';
 import { Logger } from '../common/Logger';
 
 const TAG: string = 'NativePlayer';
@@ -328,7 +328,9 @@ export class NativePlayer {
       return;
     }
     const rms: number = this.rmsCount > 0 ? Math.sqrt(this.rmsSum / this.rmsCount) : 0;
-    Logger.info(TAG, `level rms=${rms.toFixed(3)} @${this.getPositionMs()}ms`);
+    const dbg: string = decStats(this.id);
+    Logger.info(TAG, `level rms=${rms.toFixed(3)} @${this.getPositionMs()}ms` +
+      (dbg.length > 0 ? ` [${dbg}]` : ''));
     this.rmsSum = 0;
     this.rmsCount = 0;
     this.rmsNextFrame = this.writtenFrames + this.sampleRate * 2;

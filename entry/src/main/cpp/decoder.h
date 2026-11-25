@@ -36,6 +36,9 @@ public:
     virtual int64_t seek(int64_t frame) = 0;
 
     virtual void close() = 0;
+
+    /** 诊断信息（生产为空串）。解码链排障期临时通道，格式由各解码器自定。 */
+    virtual std::string debugStats() const { return std::string(); }
 };
 
 /** 按 magic + 扩展名创建解码器；不认识的格式返回 nullptr。

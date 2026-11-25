@@ -1,6 +1,7 @@
 #include "decoder.h"
 #include "fmt_aiff.h"
 #include "fmt_wavpack.h"
+#include "fmt_alac.h"
 
 #include <cstdio>
 #include <cstring>
@@ -51,8 +52,10 @@ std::string Hex4(const uint8_t *p) {
 bool NativeHandlesSuffix(const std::string &suffix) {
     // 只有已经能真解码的扩展名才进这里。接一个新格式就加一行，
     // ArkTS 侧的门禁与话术都读同一个判定，避免"能播却被拦"或"播不了却放行"。
+    // .m4a 例外：容器里可能是 AAC（AVPlayer 能解）。路由走 native，
+    // open 失败且原因带「mp4 容器非 ALAC」时由 PlayerCore 回退 AVPlayer。
     return suffix == ".aiff" || suffix == ".aif" || suffix == ".aifc" ||
-           suffix == ".wv";
+           suffix == ".wv" || suffix == ".m4a";
 }
 
 AudioSource *CreateSource(const std::string &path, std::string *why) {
@@ -80,6 +83,12 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         return CreateWavpackSource(path);
     }
 
+    if (std::memcmp(head, "ftyp", 4) == 0) {
+        // m4a/mp4 容器：里面的编码不一定是 ALAC（AAC 也走这个容器）。
+        // CreateAlacSource 对非 ALAC 会给出「mp4 容器非 ALAC」话术，上层据此回退 AVPlayer。
+        return CreateAlacSource(path, why);
+    }
+
     const std::string sfx = LowerSuffix(path);
     if (sfx == ".aiff" || sfx == ".aif" || sfx == ".aifc") {
         // 扩展名对但 magic 不对：交给 AIFF 解析器给出具体原因（比统一报"格式不支持"有用）
@@ -89,10 +98,13 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         // 同上：改错扩展名的文件由 WavPack 解析器给出具体原因
         return CreateWavpackSource(path);
     }
+    if (sfx == ".m4a" || sfx == ".mp4") {
+        // 同上：magic 不是 ftyp（有些文件开头是 skip/free 盒）也交给容器解析器
+        return CreateAlacSource(path, why);
+    }
 
-    // 以下两种已规划但解码器尚未接入，返回 nullptr 由上层给明确话术
+    // 已规划但解码器尚未接入，返回 nullptr 由上层给明确话术
     //   MAC  → APE
-    //   ftyp → ALAC（在 m4a 容器里，需读 stsd 判断）
     SetWhy(why, "没有匹配的解码器：magic=" + Hex4(head) + " 后缀=" + sfx);
     return nullptr;
 }

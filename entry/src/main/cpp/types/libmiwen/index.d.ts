@@ -36,3 +36,6 @@ export const handles: (suffix: string) => boolean;
 
 /** 版本串，用于确认设备上装的是哪个版本的解码器。 */
 export const version: () => string;
+
+/** 解码器诊断串（生产环境为空串），排障期由电平日志带出。 */
+export const stats: (id: number) => string;

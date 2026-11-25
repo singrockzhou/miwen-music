@@ -212,7 +212,19 @@ napi_value Handles(napi_env env, napi_callback_info cb) {
 /** version() → 解码器版本串，用来确认装到设备上的确实是新 .so */
 napi_value Version(napi_env env, napi_callback_info) {
     napi_value out = nullptr;
-    napi_create_string_utf8(env, "miwen-decoder/0.2 (aiff, wavpack)", NAPI_AUTO_LENGTH, &out);
+    napi_create_string_utf8(env, "miwen-decoder/0.2 (aiff, wavpack, alac)", NAPI_AUTO_LENGTH, &out);
+    return out;
+}
+
+/** stats(id) → 解码器诊断串（生产环境为空串），排障期从 ArkTS 电平日志带出 */
+napi_value Stats(napi_env env, napi_callback_info cb) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+    Entry *e = Find(GetInt(env, args[0], 0));
+    const std::string s = e == nullptr ? std::string() : e->src->debugStats();
+    napi_value out = nullptr;
+    napi_create_string_utf8(env, s.c_str(), s.size(), &out);
     return out;
 }
 
@@ -224,6 +236,7 @@ napi_value Init(napi_env env, napi_value exports) {
         {"close", nullptr, Close, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"handles", nullptr, Handles, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"version", nullptr, Version, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"stats", nullptr, Stats, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;
