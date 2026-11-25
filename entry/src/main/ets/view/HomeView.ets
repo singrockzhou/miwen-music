@@ -36,6 +36,7 @@ export struct HomeView {
   @State scanText: string = '';
   @State wallW: number = 0;
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageLink('libVersion') @Watch('reload') libVersion: number = 0;
 
@@ -65,7 +66,7 @@ export struct HomeView {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 动作 ----------------

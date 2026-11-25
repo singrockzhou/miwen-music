@@ -30,6 +30,12 @@ export interface StatsOverall {
   firstTs: number;
 }
 
+/** 按月聚合一格（年度报告的柱状图） */
+export interface MonthPlay {
+  month: number;
+  plays: number;
+}
+
 /**
  * 播放统计。
  *
@@ -191,9 +197,107 @@ export class StatsStore {
     return out;
   }
 
-  /** 最近在听：去重后的起播序列，前端只取前几条 */
-  static async recentStarts(limit: number): Promise<TopPlay[]> {
+  // ---------------- 年度报告（第三梯队第 12 项） ----------------
+
+  /** 本地时区的年份起止 ts */
+  private static yearRange(year: number): number[] {
+    const start: Date = new Date(year, 0, 1, 0, 0, 0, 0);
+    const end: Date = new Date(year + 1, 0, 1, 0, 0, 0, 0);
+    return [start.getTime(), end.getTime()];
+  }
+
+  /** 有播放记录的年份，升序。年桶在 TS 里分：date(...,'localtime') 真机不可靠（见 overall 注释） */
+  static async years(): Promise<string[]> {
+    const seen: Set<number> = new Set<number>();
+    const rs: relationalStore.ResultSet = await StatsStore.db.querySql(
+      "SELECT DISTINCT ts FROM play_log WHERE kind = 'start'"
+    );
+    while (rs.goToNextRow()) {
+      seen.add(new Date(rs.getLong(rs.getColumnIndex('ts'))).getFullYear());
+    }
+    rs.close();
+    const out: string[] = Array.from(seen).sort().map((y: number) => `${y}`);
+    return out;
+  }
+
+  /** 某年的总览四格，口径与 overall() 一致，只是圈定时间窗 */
+  static async overallOfYear(year: string): Promise<StatsOverall> {
+    const y: number = parseInt(year, 10);
+    const range: number[] = StatsStore.yearRange(y);
+    const lo: number = range[0];
+    const hi: number = range[1];
+    const w: string = `kind = 'start' AND ts >= ${lo} AND ts < ${hi}`;
+    const out: StatsOverall = { plays: 0, listenMs: 0, tracks: 0, days: 0, firstTs: 0 };
+    out.plays = await StatsStore.scalarInt(`SELECT COUNT(*) AS n FROM play_log WHERE ${w}`);
+    out.listenMs = await StatsStore.scalarInt(
+      `SELECT COALESCE(SUM(ms), 0) AS n FROM play_log WHERE kind = 'listen' AND ts >= ${lo} AND ts < ${hi}`);
+    out.tracks = await StatsStore.scalarInt(`SELECT COUNT(DISTINCT uri) AS n FROM play_log WHERE ${w}`);
+    const rs: relationalStore.ResultSet = await StatsStore.db.querySql(
+      `SELECT DISTINCT ts FROM play_log WHERE ${w}`);
+    const seen: Set<string> = new Set<string>();
+    while (rs.goToNextRow()) {
+      seen.add(StatsStore.dayKey(rs.getLong(rs.getColumnIndex('ts'))));
+    }
+    rs.close();
+    out.days = seen.size;
+    return out;
+  }
+
+  /** 某年 12 个月，每月一行（空月占位 0，柱状图不错位） */
+  static async monthly(year: string): Promise<MonthPlay[]> {
+    const y: number = parseInt(year, 10);
+    const range: number[] = StatsStore.yearRange(y);
+    const map: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const rs: relationalStore.ResultSet = await StatsStore.db.querySql(
+      "SELECT ts FROM play_log WHERE kind = 'start' AND ts >= ? AND ts < ?",
+      [range[0], range[1]]
+    );
+    while (rs.goToNextRow()) {
+      map[new Date(rs.getLong(rs.getColumnIndex('ts'))).getMonth()]++;
+    }
+    rs.close();
+    const out: MonthPlay[] = [];
+    for (let i = 0; i < 12; i++) {
+      out.push({ month: i + 1, plays: map[i] });
+    }
+    return out;
+  }
+
+  /** 某年的最常听：次数与时长都圈定在该年内 */
+  static async topTracksOfYear(year: string, limit: number): Promise<TopPlay[]> {
+    const y: number = parseInt(year, 10);
+    const range: number[] = StatsStore.yearRange(y);
     const out: TopPlay[] = [];
+    const rs: relationalStore.ResultSet = await StatsStore.db.querySql(
+      `SELECT l.uri,
+              COUNT(*) AS plays,
+              COALESCE((SELECT SUM(ms) FROM play_log WHERE kind = 'listen' AND uri = l.uri
+                        AND ts >= ? AND ts < ?), 0) AS ms,
+              COALESCE(MAX(t.title), l.uri) AS title,
+              COALESCE(MAX(t.artist), '') AS artist
+         FROM play_log l
+         LEFT JOIN track t ON t.uri = l.uri
+        WHERE l.kind = 'start' AND l.ts >= ? AND l.ts < ?
+        GROUP BY l.uri
+        ORDER BY plays DESC, ms DESC
+        LIMIT ?`,
+      [range[0], range[1], range[0], range[1], limit]
+    );
+    while (rs.goToNextRow()) {
+      out.push({
+        uri: rs.getString(rs.getColumnIndex('uri')),
+        title: rs.getString(rs.getColumnIndex('title')),
+        artist: rs.getString(rs.getColumnIndex('artist')),
+        plays: rs.getLong(rs.getColumnIndex('plays')),
+        ms: rs.getLong(rs.getColumnIndex('ms'))
+      });
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 最近在听：去重后的起播序列，前端只取前几条 */
+  static async recentStarts(limit: number): Promise<TopPlay[]> {    const out: TopPlay[] = [];
     const seen: Set<string> = new Set<string>();
     const rs: relationalStore.ResultSet = await StatsStore.db.querySql(
       `SELECT l.uri, l.ts AS plays,

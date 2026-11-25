@@ -20,14 +20,14 @@ export struct ActionPanel {
   @Prop subtitle: string = '';
   @Prop items: ActionItem[] = [];
   @StorageProp('themeKey') themeKey: string = 'dark';
-
+  @StorageProp('accentPin') accentPin: string = '';
   onPick: (index: number) => void = () => {
   };
   onClose: () => void = () => {
   };
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   build() {

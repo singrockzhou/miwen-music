@@ -172,7 +172,7 @@ const CONTRAST: Tokens = {
   groove: '#2C2C2C'
 };
 
-/** 封面用的六种"唱片封套"底色，按专辑名散列取一个 */
+/** 封面用的八种"唱片封套"底色，按专辑名散列取一个 */
 const SLEEVE: string[] = [
   '#2B3A55', '#5A2E3A', '#2E4A3F', '#4B3A66', '#2B6E8F', '#8A4B2B', '#44444F', '#6B5A2E'
 ];
@@ -185,6 +185,9 @@ export class Theme {
   static readonly NIGHT: string = 'night';
   static readonly KRAFT: string = 'kraft';
   static readonly CONTRAST: string = 'contrast';
+
+  /** 钉住的强调色（第三梯队第 16 项）：'' = 跟随主题，'#RRGGBB' = 用户锁定 */
+  static readonly ACCENT_PIN_KEY: string = 'accentPin';
 
   /** 顺序即设置页的排列顺序：三套基础在前，四套 Pro 在后 */
   static readonly KEYS: string[] = [
@@ -199,26 +202,98 @@ export class Theme {
   /** 1.0 免费的三套：已经给出去的东西不能收回 */
   static readonly FREE: string[] = [Theme.DARK, Theme.PAPER, Theme.TAPE];
 
-  static of(key: string): Tokens {
-    if (key === Theme.PAPER) {
-      return PAPER;
+  /** 派生结果按 key|pin 缓存：build 每帧都会调 of()，派生色不许每次重算 */
+  private static cache: Map<string, Tokens> = new Map<string, Tokens>();
+
+  /**
+   * 取一套令牌。pin 是用户钉住的强调色（'' 或非法值表示跟随主题）。
+   * 钉住时只派生 accent 系四色，其余照旧——底色和文字对比度不能被一个颜色破坏。
+   */
+  static of(key: string, pin: string = ''): Tokens {
+    if (!Theme.isHex(pin)) {
+      if (key === Theme.PAPER) {
+        return PAPER;
+      }
+      if (key === Theme.TAPE) {
+        return TAPE;
+      }
+      if (key === Theme.VINYL) {
+        return VINYL;
+      }
+      if (key === Theme.NIGHT) {
+        return NIGHT;
+      }
+      if (key === Theme.KRAFT) {
+        return KRAFT;
+      }
+      if (key === Theme.CONTRAST) {
+        return CONTRAST;
+      }
+      return DARK;
     }
-    if (key === Theme.TAPE) {
-      return TAPE;
+    const ck: string = `${key}|${pin}`;
+    const hit: Tokens | undefined = Theme.cache.get(ck);
+    if (hit !== undefined) {
+      return hit;
     }
-    if (key === Theme.VINYL) {
-      return VINYL;
-    }
-    if (key === Theme.NIGHT) {
-      return NIGHT;
-    }
-    if (key === Theme.KRAFT) {
-      return KRAFT;
-    }
-    if (key === Theme.CONTRAST) {
-      return CONTRAST;
-    }
-    return DARK;
+    const base: Tokens = Theme.of(key, '');
+    const out: Tokens = Theme.derive(base, pin);
+    Theme.cache.set(ck, out);
+    return out;
+  }
+
+  /** 合法的 #RRGGBB 才允许钉住，防手滑存进脏值把全 UI 染崩 */
+  static isHex(s: string): boolean {
+    return s.length === 7 && s.charAt(0) === '#' && /^[0-9A-Fa-f]{6}$/.test(s.substring(1));
+  }
+
+  /**
+   * 从钉住色派生 accent 系四色：
+   * - accent = 钉住色原样；
+   * - accentDeep = 压暗 35%（描边、沟槽）；
+   * - accentWash = 钉住色以 14% 透明度混进底色（选中块），浅深主题都成立；
+   * - onAccent = 按钉住色亮度选黑或白，保证落在强调色上的字永远看得清。
+   */
+  private static derive(base: Tokens, pin: string): Tokens {
+    const out: Tokens = {
+      bg: base.bg,
+      bgDeep: base.bgDeep,
+      surface: base.surface,
+      surfaceAlt: base.surfaceAlt,
+      line: base.line,
+      lineSoft: base.lineSoft,
+      text: base.text,
+      dim: base.dim,
+      faint: base.faint,
+      accent: pin,
+      accentDeep: Theme.darken(pin, 0.35),
+      accentWash: Theme.wash(base.bg, pin, 0.14),
+      danger: base.danger,
+      onAccent: Theme.luma(pin) > 0.55 ? '#101010' : '#FFFFFF',
+      groove: base.groove
+    };
+    return out;
+  }
+
+  /** 相对亮度（0..1），决定强调色上配黑字还是白字 */
+  private static luma(hex: string): number {
+    const r: number = parseInt(hex.substring(1, 3), 16) / 255;
+    const g: number = parseInt(hex.substring(3, 5), 16) / 255;
+    const b: number = parseInt(hex.substring(5, 7), 16) / 255;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  /** 把 fg 以 ratio 透明度混进底色 bg */
+  private static wash(bg: string, fg: string, ratio: number): string {
+    const r: number = Math.round(parseInt(bg.substring(1, 3), 16) * (1 - ratio) + parseInt(fg.substring(1, 3), 16) * ratio);
+    const g: number = Math.round(parseInt(bg.substring(3, 5), 16) * (1 - ratio) + parseInt(fg.substring(3, 5), 16) * ratio);
+    const b: number = Math.round(parseInt(bg.substring(5, 7), 16) * (1 - ratio) + parseInt(fg.substring(5, 7), 16) * ratio);
+    return `#${Theme.hex2(r)}${Theme.hex2(g)}${Theme.hex2(b)}`;
+  }
+
+  /** 封套色板：设置页钉强调色用的就是这八色（与封面散列同一来源） */
+  static sleeveColors(): string[] {
+    return SLEEVE;
   }
 
   static index(key: string): number {

@@ -28,6 +28,7 @@ interface ProFeat {
 @Component
 struct ProPage {
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageProp('proOwned') proOwned: boolean = false;
   // 沉浸式全屏下状态栏会盖住返回栏，必须自己让出安全区
@@ -44,8 +45,9 @@ struct ProPage {
     { name: '歌词增强', desc: '读文件内嵌歌词、双语双行、时间轴 ±0.5s 微调', tag: '已实装' },
     { name: 'M3U 与备份还原', desc: '歌单导入导出，索引与收藏备份成单个 zip', tag: '已实装' },
     { name: 'A-B 循环', desc: '任意两点反复听，学乐器扒谱用', tag: '已实装' },
-    { name: '听歌统计', desc: '起播次数、收听时长、趋势图，可存成长图', tag: '已实装' },
+    { name: '听歌统计', desc: '起播次数、收听时长、趋势图与年度报告，可存成长图', tag: '已实装' },
     { name: '卡片矩阵', desc: '封面墙三档密度：大卡 / 标准 / 密集', tag: '已实装' },
+    { name: '自定义强调色', desc: '从封套八色钉一个全局强调色，切主题也保持', tag: '已实装' },
     { name: 'CUE 整轨分轨', desc: '一张整轨 + 一个 CUE，拆成可点播的轨，播放按时间片定位', tag: '已实装' },
     { name: '无缝播放', desc: '双播放器预加载提前切流，或 3 秒交叉淡入淡出', tag: '已实装' },
     { name: '桌面歌词', desc: '系统桌面歌词 + 锁屏歌词 + 播控中心歌词，一份数据三处显示', tag: '已实装' },
@@ -72,7 +74,7 @@ struct ProPage {
   ];
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   aboutToAppear(): void {

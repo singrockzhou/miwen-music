@@ -38,6 +38,7 @@ interface RootRow {
 @Component
 struct RootsPage {
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   // 沉浸式全屏下状态栏会盖住返回栏，必须自己让出安全区
   @StorageProp('topInset') topInset: number = 0;
@@ -63,7 +64,7 @@ struct RootsPage {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 数据 ----------------
@@ -410,11 +411,12 @@ struct RootCardView {
   @Prop count: number = 0;
   @Prop folders: number = 0;
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   onTap: () => void = () => {
   };
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   build() {

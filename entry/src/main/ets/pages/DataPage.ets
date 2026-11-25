@@ -24,6 +24,7 @@ const TAG: string = 'DataPage';
 @Component
 struct DataPage {
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('proOwned') proOwned: boolean = false;
   @StorageProp('topInset') topInset: number = 0;
   @StorageProp('bp') bp: string = Const.BP_SM;
@@ -43,7 +44,7 @@ struct DataPage {
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 门禁 ----------------

@@ -4,7 +4,7 @@
 export class Const {
   static readonly APP_NAME: string = '密纹音乐';
   static readonly APP_EN: string = 'LOCAL RECORD STORE';
-  static readonly VERSION: string = '1.5.0';
+  static readonly VERSION: string = '1.6.0';
 
   /** preferences 文件名 */
   static readonly PREF_NAME: string = 'miwen_pref';
@@ -28,6 +28,8 @@ export class Const {
   static readonly KEY_VIEW: string = 'view_mode';
   /** 封面墙密度：big / std / dense（大卡与密集是 Pro） */
   static readonly KEY_GRID_DENSITY: string = 'grid_density';
+  /** 钉住的强调色（第三梯队第 16 项）：'' 跟随主题，否则为 #RRGGBB */
+  static readonly KEY_ACCENT_PIN: string = 'accent_pin';
   /** 示例曲库是否已装载（只自动装一次） */
   static readonly KEY_DEMO_SEEDED: string = 'demo_seeded';
 

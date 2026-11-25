@@ -17,13 +17,14 @@ export struct GrooveRing {
   @Prop diameter: number = 300;
   @Prop coverSize: number = 236;
   @StorageProp('themeKey') @Watch('redraw') themeKey: string = 'dark';
+  @StorageProp('accentPin') @Watch('redraw') accentPin: string = '';
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private ready: boolean = false;
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   redraw(): void {

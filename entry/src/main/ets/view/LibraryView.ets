@@ -71,6 +71,7 @@ export struct LibraryView {
   /** 索引来自旧版本（没有 folder 字段），需要重扫才能建树 */
   @State folderLegacy: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageProp('proOwned') proOwned: boolean = false;
   @StorageLink('libVersion') @Watch('onLibChanged') libVersion: number = 0;
@@ -113,7 +114,7 @@ export struct LibraryView {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 数据 ----------------

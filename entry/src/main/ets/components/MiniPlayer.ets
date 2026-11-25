@@ -15,7 +15,7 @@ import { PlayPauseGlyph } from './PlayPauseGlyph';
 export struct MiniPlayer {
   @State snap: PlayerSnapshot = emptySnapshot();
   @StorageProp('themeKey') themeKey: string = 'dark';
-
+  @StorageProp('accentPin') accentPin: string = '';
   onOpen: () => void = () => {
   };
 
@@ -35,7 +35,7 @@ export struct MiniPlayer {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   private ratio(): number {

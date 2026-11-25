@@ -47,6 +47,7 @@ struct PlayerPage {
   /** 与 panelItems 一一对应的动作键：行的有无随歌词状态变化，用下标分发会错位 */
   @State panelKeys: string[] = [];
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('proOwned') proOwned: boolean = false;
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageProp('topInset') topInset: number = 0;
@@ -95,7 +96,7 @@ struct PlayerPage {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 歌词 ----------------

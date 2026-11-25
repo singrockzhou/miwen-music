@@ -44,6 +44,7 @@ struct ListPage {
   @State panelTrack: Track = emptyTrack();
   @State empty: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageProp('topInset') topInset: number = 0;
 
@@ -77,7 +78,7 @@ struct ListPage {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   private async load(): Promise<void> {

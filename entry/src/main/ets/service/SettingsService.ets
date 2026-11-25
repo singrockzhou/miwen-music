@@ -3,7 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { formBindingData, formProvider } from '@kit.FormKit';
 import { Const } from '../common/Constants';
 import { Logger } from '../common/Logger';
-import { SOURCE_KEY, THEME_KEY } from '../common/Theme';
+import { SOURCE_KEY, THEME_KEY, Theme } from '../common/Theme';
 
 const TAG: string = 'SettingsService';
 
@@ -25,6 +25,7 @@ export class SettingsService {
     }
     SettingsService.pref = await preferences.getPreferences(ctx, Const.PREF_NAME);
     AppStorage.setOrCreate(THEME_KEY, SettingsService.theme());
+    AppStorage.setOrCreate(Theme.ACCENT_PIN_KEY, SettingsService.accentPin());
     AppStorage.setOrCreate(SOURCE_KEY, SettingsService.source());
     AppStorage.setOrCreate('libVersion', 0);
   }
@@ -81,6 +82,19 @@ export class SettingsService {
 
   static onThemeChange(fn: (key: string) => void): void {
     SettingsService.themeHooks.push(fn);
+  }
+
+  // ---------- 钉住的强调色 ----------
+
+  /** '' = 跟随主题；'#RRGGBB' = 用户钉住的封套色。非法值按跟随主题处理 */
+  static accentPin(): string {
+    return SettingsService.raw(Const.KEY_ACCENT_PIN, '');
+  }
+
+  static setAccentPin(hex: string): void {
+    const v: string = Theme.isHex(hex) ? hex : '';
+    SettingsService.write(Const.KEY_ACCENT_PIN, v);
+    AppStorage.setOrCreate(Theme.ACCENT_PIN_KEY, v);
   }
 
   // ---------- 曲库 ----------

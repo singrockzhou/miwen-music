@@ -45,6 +45,7 @@ export struct CollectionView {
   onGoLibrary: () => void = () => {
   };
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('bp') bp: string = Const.BP_SM;
   @StorageLink('libVersion') @Watch('reload') libVersion: number = 0;
 
@@ -71,7 +72,7 @@ export struct CollectionView {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 动作 ----------------

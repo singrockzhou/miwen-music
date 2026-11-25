@@ -27,9 +27,9 @@ export struct CoverArt {
    */
   @Prop compact: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
-
+  @StorageProp('accentPin') accentPin: string = '';
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   private uri(): string {

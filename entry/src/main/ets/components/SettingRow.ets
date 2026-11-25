@@ -14,6 +14,7 @@ export struct SettingRow {
   @Prop detail: string = '';
   @Prop danger: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   onTap: () => void = () => {
   };
 
@@ -52,6 +53,6 @@ export struct SettingRow {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 }

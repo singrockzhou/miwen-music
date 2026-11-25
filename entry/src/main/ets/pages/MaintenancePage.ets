@@ -30,6 +30,7 @@ const TAG: string = 'MaintenancePage';
 @Component
 struct MaintenancePage {
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('topInset') topInset: number = 0;
   @StorageProp('bp') bp: string = Const.BP_SM;
 
@@ -55,7 +56,7 @@ struct MaintenancePage {
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 重复曲目 ----------------

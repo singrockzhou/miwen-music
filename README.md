@@ -8,7 +8,7 @@
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.82 MB，已签名可直接 `hdc install`）
 - 代码规模：54 个 `.ets` 约 16,000 行 + `cpp/` 自研 22 文件约 5,500 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
-- 当前版本：v1.5.0（Pro 2.0 全部收官：**DST 解压、SACD ISO 直读、文件标签回写**三项落地——DST 算术解码接进 DFF 链（自研编码器生成素材 roundtrip bit-exact 验证）、ISO 内两声道曲目展开成虚拟曲目（`iso://…#mwi:n`）、批量改标签可写回文件本体（FLAC Vorbis comment / MP3 ID3v2.3，音频流字节不动）；v1.4.0 已含变速不变调(WSOLA)、DSF/DFF 软解、曲库维护页、睡眠定时渐弱）
+- 当前版本：v1.6.0（第三梯队收官：**年度听歌报告 + 自定义强调色**——统计页加年份切换 / 12 月柱状图 / 年度 TOP5，随长图导出；设置页可从封套八色钉住全局强调色，派生 accent 系四色，切主题与重启均保持。v1.5.0 已含 DST 解压、SACD ISO 直读、文件标签回写；v1.4.0 已含变速不变调(WSOLA)、DSF/DFF 软解、曲库维护页、睡眠定时渐弱）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -444,6 +444,10 @@ Track → NativePlayer.open(path)
 - [x] 文件标签回写：维护页批量改标签 + 「同时回写到文件」→ FLAC 写 Vorbis comment、MP3 写 ID3v2.3，拉回文件独立解析验证标签正确、音频流逐字节不动；非 FLAC/MP3 自动跳过并计数
 - [x] 回写失败路径如实：目录授权失效时 Toast 报「失败 N（打不开文件…）」，不假成功
 - [x] 目录授权失效（杀进程/重装）→ 重新授权即恢复，无需重扫
+
+### 9.10 v1.6.0 第三梯队收官（年度报告 / 强调色）
+- [ ] 年度听歌报告：统计页出现「年度报告」区，年份 chips 可切换，四格与 12 月柱状图、年度 TOP5 随所选年变化；「存成长图」把年度区一并拍进去
+- [ ] 自定义强调色：设置→外观→强调色出现八色板 + 跟随主题；钉住后全 App 强调色即时变化（播放页沟槽环、进度、选中块）；切主题、杀进程重启后钉住仍生效；未购走 3 次试用门禁，用完弹购买页
 
 ---
 

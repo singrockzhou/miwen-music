@@ -8,11 +8,12 @@ import { Logger } from '../common/Logger';
 import { Theme, Tokens } from '../common/Theme';
 import { Track } from '../model/Track';
 import { TrackStore } from '../db/TrackStore';
-import { StatsStore, StatsOverall, TopPlay, DayPlay } from '../db/StatsStore';
+import { StatsStore, StatsOverall, TopPlay, DayPlay, MonthPlay } from '../db/StatsStore';
 import { PlayerCore } from '../service/PlayerCore';
 
 const TAG: string = 'StatsPage';
 const BAR_DAYS: number = 14;
+const YEAR_TOP: number = 5;
 
 /**
  * 听歌统计（密纹 Pro）。
@@ -34,7 +35,14 @@ struct StatsPage {
   @State recent: TopPlay[] = [];
   @State loaded: boolean = false;
   @State saving: boolean = false;
+  // ---- 年度报告（第三梯队第 12 项）----
+  @State years: string[] = [];
+  @State year: string = '';
+  @State yOverall: StatsOverall = { plays: 0, listenMs: 0, tracks: 0, days: 0, firstTs: 0 };
+  @State months: MonthPlay[] = [];
+  @State yTops: TopPlay[] = [];
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('proOwned') proOwned: boolean = false;
   @StorageProp('topInset') topInset: number = 0;
   @StorageProp('bottomInset') bottomInset: number = 0;
@@ -52,7 +60,7 @@ struct StatsPage {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   pageTransition() {
@@ -73,10 +81,55 @@ struct StatsPage {
       this.tops = await StatsStore.topTracks(10);
       this.days = await StatsStore.daily(BAR_DAYS);
       this.recent = await StatsStore.recentStarts(5);
+      await this.loadYears();
     } catch (e) {
       Logger.error(TAG, `load failed ${JSON.stringify(e)}`);
     }
     this.loaded = true;
+  }
+
+  /** 年份列表：默认落在最新一个有记录的年（多数时候就是今年） */
+  private async loadYears(): Promise<void> {
+    this.years = await StatsStore.years();
+    if (this.years.length === 0) {
+      this.year = '';
+      return;
+    }
+    if (this.year.length === 0 || this.years.indexOf(this.year) < 0) {
+      this.year = this.years[this.years.length - 1];
+    }
+    await this.loadYear();
+  }
+
+  private async loadYear(): Promise<void> {
+    if (this.year.length === 0) {
+      return;
+    }
+    this.yOverall = await StatsStore.overallOfYear(this.year);
+    this.months = await StatsStore.monthly(this.year);
+    this.yTops = await StatsStore.topTracksOfYear(this.year, YEAR_TOP);
+    Logger.info(TAG, `year ${this.year}: plays=${this.yOverall.plays} ms=${this.yOverall.listenMs}`);
+  }
+
+  /** 切年：切完把该年数据刷进界面 */
+  private async pickYear(y: string): Promise<void> {
+    if (y === this.year) {
+      return;
+    }
+    this.year = y;
+    try {
+      await this.loadYear();
+    } catch (e) {
+      Logger.error(TAG, `load year failed ${JSON.stringify(e)}`);
+    }
+  }
+
+  private maxMonthPlays(): number {
+    let m: number = 0;
+    for (const d of this.months) {
+      m = Math.max(m, d.plays);
+    }
+    return m;
   }
 
   /** 点最常听的一行：把 TOP 列表当队列放，从这一首开始 */
@@ -304,6 +357,125 @@ struct StatsPage {
                 .fontColor(this.c().faint)
                 .width('100%')
                 .margin({ top: 6 })
+            }
+
+            // ---- 年度报告：年份切换 + 12 月柱状图 + 年度四格 + 年度 TOP5 ----
+            // 四格内联而不抽 @Builder：本页真机验证过 @Builder 按值传参不随状态刷新（见上文教训）
+            this.SectionTitle('年度报告', 'YEARLY REPORT')
+            if (this.years.length === 0) {
+              Text('还没有跨过一天的播放记录。年度报告从有记录的第一年起开始汇总。')
+                .fontSize(10)
+                .fontColor(this.c().dim)
+                .lineHeight(17)
+                .width('100%')
+            } else {
+              Row({ space: 8 }) {
+                ForEach(this.years, (y: string) => {
+                  Text(y)
+                    .fontSize(10)
+                    .fontColor(this.year === y ? this.c().onAccent : this.c().dim)
+                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                    .backgroundColor(this.year === y ? this.c().accent : Color.Transparent)
+                    .border({ width: 0.5, color: this.year === y ? this.c().accent : this.c().line })
+                    .onClick(() => {
+                      this.pickYear(y);
+                    })
+                }, (y: string) => `yr_${y}_${this.year}`)
+              }
+              .width('100%')
+
+              Row() {
+                Column() {
+                  Text(`${this.yOverall.plays}`)
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.c().text)
+                  Text('次起播')
+                    .fontSize(8)
+                    .fontColor(this.c().faint)
+                    .letterSpacing(0.8)
+                    .margin({ top: 5 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+                Column() {
+                  Text(Fmt.span(this.yOverall.listenMs))
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.c().text)
+                  Text('收听时长')
+                    .fontSize(8)
+                    .fontColor(this.c().faint)
+                    .letterSpacing(0.8)
+                    .margin({ top: 5 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+                Column() {
+                  Text(`${this.yOverall.tracks}`)
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.c().text)
+                  Text('听过曲目')
+                    .fontSize(8)
+                    .fontColor(this.c().faint)
+                    .letterSpacing(0.8)
+                    .margin({ top: 5 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+                Column() {
+                  Text(`${this.yOverall.days}`)
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.c().text)
+                  Text('收听天数')
+                    .fontSize(8)
+                    .fontColor(this.c().faint)
+                    .letterSpacing(0.8)
+                    .margin({ top: 5 })
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Center)
+              }
+              .width('100%')
+              .padding({ top: 14, bottom: 4 })
+
+              Row({ space: 4 }) {
+                ForEach(this.months, (d: MonthPlay) => {
+                  Column() {
+                    Column()
+                      .width('100%')
+                      .height(d.plays > 0 ? Math.max(5, Math.round(d.plays / Math.max(1, this.maxMonthPlays()) * 48)) : 2)
+                      .backgroundColor(d.plays > 0 ? this.c().accent : this.c().line)
+                    Text(`${d.month}`)
+                      .fontSize(6)
+                      .fontColor(this.c().faint)
+                      .margin({ top: 4 })
+                  }
+                  .layoutWeight(1)
+                  .height(72)
+                  .justifyContent(FlexAlign.End)
+                }, (d: MonthPlay) => `mo_${this.year}_${d.month}_${d.plays}`)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Bottom)
+              .margin({ top: 12 })
+
+              this.SectionTitle(`${this.year} 年最常听`, `TOP ${YEAR_TOP} OF ${this.year}`)
+              if (this.yTops.length === 0) {
+                Text(`${this.year} 年还没有播放记录`)
+                  .fontSize(10)
+                  .fontColor(this.c().dim)
+                  .width('100%')
+              } else {
+                ForEach(this.yTops, (t: TopPlay, i: number) => {
+                  this.PlayRow(t, i, false)
+                  if (i < this.yTops.length - 1) {
+                    Divider().color(this.c().lineSoft).strokeWidth(0.5)
+                  }
+                }, (t: TopPlay) => `ytop_${this.year}_${t.uri}_${t.plays}`)
+              }
             }
 
             this.SectionTitle(`近 ${BAR_DAYS} 天`, 'LAST 14 DAYS')

@@ -52,7 +52,10 @@ export struct SettingsView {
   @State direct: boolean = false;
   /** 音频能力探测结果，一行摘要 */
   @State probeText: string = '未探测';
+  /** 强调色门禁待应用的钉住色 */
+  @State accentPending: string = '';
   @StorageProp('themeKey') themeKey: string = 'dark';
+  @StorageProp('accentPin') accentPin: string = '';
   @StorageProp('proOwned') proOwned: boolean = false;
   @StorageProp('bp') bp: string = Const.BP_SM;
   // 曲库被扫描/清空/载入示例后版本号会涨，这里跟着重算，否则计数会停在旧值。
@@ -99,7 +102,7 @@ export struct SettingsView {
   }
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   // ---------------- 动作 ----------------
@@ -249,6 +252,38 @@ export struct SettingsView {
     this.panelOpen = true;
   }
 
+  /**
+   * 钉住强调色（第三梯队第 16 项）：从封套八色里选一个作为全局强调色。
+   * 「跟随主题」是默认态，放行不算功能；钉住任意颜色才是 Pro 功能，走试用门禁。
+   */
+  private pickAccent(hex: string): void {
+    if (hex.length === 0) {
+      SettingsService.setAccentPin('');
+      promptAction.showToast({ message: '强调色已恢复跟随主题' });
+      return;
+    }
+    if (this.accentPin === hex) {
+      return;
+    }
+    if (!this.proOwned) {
+      if (ProService.trialLeft('accent') <= 0) {
+        promptAction.showToast({ message: '自定义强调色的试用次数用完了' });
+        router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+        return;
+      }
+      this.accentPending = hex;
+      this.panelMode = 'accent';
+      this.panelItems = [
+        { label: `试用一次（还剩 ${ProService.trialLeft('accent')} 次）`, hint: '全局界面会立即换成这个颜色', danger: false },
+        { label: '去解锁密纹 Pro', hint: `¥${Const.PRO_PRICE_EARLY}`, danger: false }
+      ];
+      this.panelOpen = true;
+      return;
+    }
+    SettingsService.setAccentPin(hex);
+    promptAction.showToast({ message: '强调色已钉住，切主题也保持' });
+  }
+
   private onPanelPick(i: number): void {
     if (this.panelMode === 'gapless') {
       this.panelOpen = false;
@@ -309,6 +344,24 @@ export struct SettingsView {
           duration: 2000
         });
         router.pushUrl({ url: 'pages/StatsPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+        return;
+      }
+      router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+      return;
+    }
+    if (this.panelMode === 'accent') {
+      this.panelOpen = false;
+      if (i === 0) {
+        if (!ProService.consumeTrial('accent')) {
+          promptAction.showToast({ message: '试用次数用完了' });
+          return;
+        }
+        const left: number = ProService.trialLeft('accent');
+        promptAction.showToast({
+          message: left > 0 ? `强调色已钉住，剩 ${left} 次试用` : '强调色已钉住（这是最后一次试用）',
+          duration: 2200
+        });
+        SettingsService.setAccentPin(this.accentPending);
         return;
       }
       router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
@@ -562,6 +615,56 @@ export struct SettingsView {
             .width('100%')
             .padding({ top: 10, bottom: 2 })
 
+            // ---- 强调色（钉住封套色）----
+            // 与封面散列同一组色源：钉住哪个，全 App 的落针点/进度/当前项就换成哪个。
+            Column() {
+              Row() {
+                Text('强调色')
+                  .fontSize(11)
+                  .fontColor(this.c().text)
+                  .layoutWeight(1)
+                Text(this.accentPin.length > 0 ? '已钉住' : '跟随主题')
+                  .fontSize(8)
+                  .fontColor(this.accentPin.length > 0 ? this.c().accent : this.c().faint)
+                  .letterSpacing(0.8)
+              }
+              .width('100%')
+              Row({ space: 10 }) {
+                // 「跟随主题」块：左半当前主题色，右半斜纹示意"恢复默认"
+                Column()
+                  .width(30)
+                  .height(30)
+                  .linearGradient({
+                    angle: 135,
+                    colors: [[this.c().accent, 0.5], [this.c().surfaceAlt, 0.5]]
+                  })
+                  .border({ width: 0.5, color: this.accentPin.length === 0 ? this.c().accent : this.c().line })
+                  .onClick(() => {
+                    this.pickAccent('');
+                  })
+                ForEach(Theme.sleeveColors(), (hex: string) => {
+                  Column()
+                    .width(30)
+                    .height(30)
+                    .backgroundColor(hex)
+                    .border({ width: this.accentPin === hex ? 1.5 : 0.5, color: this.accentPin === hex ? this.c().text : this.c().line })
+                    .onClick(() => {
+                      this.pickAccent(hex);
+                    })
+                }, (hex: string) => `sw_${hex}_${this.accentPin}`)
+              }
+              .width('100%')
+              .margin({ top: 12 })
+              Text('选一个封套色钉住，进度、落针点与选中项全局换色；切主题也保持。钉住属于密纹 Pro。')
+                .fontSize(9)
+                .fontColor(this.c().faint)
+                .lineHeight(15)
+                .width('100%')
+                .margin({ top: 10 })
+            }
+            .width('100%')
+            .padding({ top: 14, bottom: 4 })
+
             // ---- 曲库 ----
             this.SectionTitle('曲库', 'LIBRARY')
             this.Divider()
@@ -607,7 +710,7 @@ export struct SettingsView {
             this.Divider()
             SettingRow({
               label: '听歌统计',              value: this.proOwned ? '' : 'PRO',
-              detail: '起播次数、收听时长、最常听与近两周趋势，全部本机生成；可存成长图',
+              detail: '起播次数、收听时长、年度报告、最常听与近两周趋势，全部本机生成；可存成长图',
               onTap: () => {
                 this.openStats();
               }
@@ -887,8 +990,9 @@ export struct SettingsView {
       if (this.panelOpen) {
         ActionPanel({
           title: this.panelMode === 'clear' ? '清空曲库索引？'
-            : (this.panelMode === 'stats' ? '听歌统计'
-              : (this.panelMode === 'gapless' ? '无缝播放' : (this.panelMode === 'desklyric' ? '桌面歌词' : '睡眠定时'))),
+            : (this.panelMode === 'accent' ? '自定义强调色'
+              : (this.panelMode === 'stats' ? '听歌统计'
+                : (this.panelMode === 'gapless' ? '无缝播放' : (this.panelMode === 'desklyric' ? '桌面歌词' : '睡眠定时')))),
           subtitle: this.panelMode === 'clear'
             ? '只删除密纹自己建的索引，不会动你磁盘上的任何文件。下次选目录会重新扫。'
             : (this.panelMode === 'sleep' ? '到点自动暂停，不退出应用' : '密纹 Pro 功能'),

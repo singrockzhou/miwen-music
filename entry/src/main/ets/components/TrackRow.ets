@@ -20,14 +20,14 @@ export struct TrackRow {
   @Prop index: number = 0;
   @Prop last: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
-
+  @StorageProp('accentPin') accentPin: string = '';
   onTap: () => void = () => {
   };
   onLong: () => void = () => {
   };
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   private metaLine(): string {

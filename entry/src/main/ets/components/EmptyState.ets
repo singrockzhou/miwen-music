@@ -15,14 +15,14 @@ export struct EmptyState {
   @Prop secondaryLabel: string = '';
   @Prop danger: boolean = false;
   @StorageProp('themeKey') themeKey: string = 'dark';
-
+  @StorageProp('accentPin') accentPin: string = '';
   onAction: () => void = () => {
   };
   onSecondary: () => void = () => {
   };
 
   private c(): Tokens {
-    return Theme.of(this.themeKey);
+    return Theme.of(this.themeKey, this.accentPin);
   }
 
   build() {
