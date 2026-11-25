@@ -15,9 +15,10 @@
  *
  * 支持：
  *   - DSF：'DSD ' + 'fmt ' + 'data'，块内按声道分段（blockSize），比特 LSB 在前；
- *   - DFF：FRM8 容器，FSnn/CHNL/CMPR，PCM 交织（每帧每声道 1 字节），比特 MSB 在前。
+ *   - DFF：FRM8 容器，FSnn/CHNL/CMPR，PCM 交织（每帧每声道 1 字节），比特 MSB 在前；
+ *   - DFF-DST：'DST ' 块（FRTE + DSTF 帧索引），走 fmt_dst 无损解压后再抽取。
  * 不支持（给明确话术）：
- *   - DST 压缩的 DFF；ISO（SACD 镜像结构复杂，识别层话术）。
+ *   - 3 声道以上的 DFF；SACD ISO 见 fmt_iso（按曲目虚拟化后播放）。
  */
 AudioSource *CreateDsfSource(const std::string &path, std::string *why);
 

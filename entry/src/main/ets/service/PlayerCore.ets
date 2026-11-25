@@ -347,7 +347,18 @@ export class PlayerCore {
       this.isDemo = false;
       // 自建解码链（第二梯队第 7 项）：系统解码器解不了的格式交给 libmiwen.so + AudioRenderer。
       // 判定读 NativePlayer.handles()，与 Constants.UNDECODED_SUFFIX 是同一份口径的两面。
-      if (NativePlayer.handles(t.suffix)) {
+      if (t.suffix === '.iso' && t.path.indexOf('#mwi:') >= 0) {
+        // SACD ISO 虚拟曲目（v1.5.0）：扫描时已展开成 #mwi: 方案，直走原生通道
+        if (t.cueStart >= 0) {
+          this.fail('CUE 分轨暂只支持系统可解码的格式（WAV / FLAC）');
+          return;
+        }
+        await this.openNative(t);
+      } else if (t.suffix === '.iso') {
+        // 裸 ISO（扫描时解析失败留下的占位条目）
+        this.fail('这张 ISO 不是受支持的 SACD 镜像（或只有多声道区）；详情见曲库条目标题里的原因');
+        return;
+      } else if (NativePlayer.handles(t.suffix)) {
         if (t.cueStart >= 0) {
           // 分轨要按时间片裁 PCM，原生通道还没做窗口限制；放它播整轨会让用户听到下一轨
           this.fail('CUE 分轨暂只支持系统可解码的格式（WAV / FLAC）');

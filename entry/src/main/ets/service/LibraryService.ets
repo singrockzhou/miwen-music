@@ -2,6 +2,7 @@ import { fileIo as fs, fileUri, picker, fileShare } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { taskpool } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
+import { isoInfo as decIsoInfo } from 'libmiwen.so';
 import { Const } from '../common/Constants';
 import { Logger } from '../common/Logger';
 import { RawTag, Track, emptyTag } from '../model/Track';
@@ -137,10 +138,19 @@ export class LibraryService {
         break;
       }
       try {
-        const t: Track | null = await LibraryService.buildTrack(ctx, rootPath, rel);
-        if (t !== null) {
-          await TrackStore.upsert(t);
-          added++;
+        if (rel.toLowerCase().endsWith('.iso')) {
+          // SACD ISO（v1.5.0）：一张碟展开成"每曲一条"的虚拟曲目（#mwi: 方案）
+          const isos: Track[] = await LibraryService.buildIsoTracks(rootPath, rel);
+          for (const it of isos) {
+            await TrackStore.upsert(it);
+            added++;
+          }
+        } else {
+          const t: Track | null = await LibraryService.buildTrack(ctx, rootPath, rel);
+          if (t !== null) {
+            await TrackStore.upsert(t);
+            added++;
+          }
         }
       } catch (e) {
         Logger.warn(TAG, `skip ${rel}: ${JSON.stringify(e)}`);
@@ -266,6 +276,99 @@ export class LibraryService {
       cueStart: -1,
       cueEnd: -1
     };
+  }
+
+  /**
+   * SACD ISO → 虚拟曲目列表（v1.5.0）。
+   *
+   * path 存 `<iso路径>#mwi:<trackIndex>`（NativePlayer 据此走 openSacdTrack）；
+   * uri 是库内唯一键，用 `iso://` 前缀方案避免与文件 URI 冲突。
+   * 解析失败的 ISO 也入库一条"带原因的占位曲目"，点播时给明确话术，绝不静默消失。
+   */
+  private static async buildIsoTracks(rootPath: string, rel: string): Promise<Track[]> {
+    const relClean: string = rel.startsWith('/') ? rel.substring(1) : rel;
+    const base: string = rootPath.endsWith('/') ? rootPath.substring(0, rootPath.length - 1) : rootPath;
+    const path: string = `${base}/${relClean}`;
+    const stat: fs.Stat = fs.statSync(path);
+    if (!stat.isFile() || stat.size < Const.MIN_BYTES) {
+      return [];
+    }
+    const cut: number = relClean.lastIndexOf('/');
+    const folder: string = cut >= 0 ? relClean.substring(0, cut) : '';
+    const nameNoExt: string = path.substring(path.lastIndexOf('/') + 1, path.lastIndexOf('.'));
+    const mtimeMs: number = stat.mtime * 1000;
+
+    interface IsoTrackJson {
+      title: string;
+      durationMs: number;
+      dst: boolean;
+    }
+    interface IsoInfoJson {
+      ok: boolean;
+      error: string;
+      album: string;
+      artist: string;
+      tracks: IsoTrackJson[];
+    }
+
+    const out: Track[] = [];
+    let info: IsoInfoJson = { ok: false, error: '', album: '', artist: '', tracks: [] };
+    try {
+      info = JSON.parse(decIsoInfo(path)) as IsoInfoJson;
+    } catch (e) {
+      Logger.warn(TAG, `isoInfo failed: ${JSON.stringify(e)}`);
+    }
+    if (!info.ok || !info.tracks || info.tracks.length === 0) {
+      const why: string = info.error.length > 0 ? info.error : '不是受支持的 SACD 镜像';
+      out.push({
+        id: 0,
+        uri: `iso://${path}`,
+        path: path,
+        title: `${nameNoExt}（暂不支持：${why}）`,
+        artist: '',
+        album: '',
+        duration: 0,
+        sampleRate: 0,
+        bitrate: 0,
+        suffix: '.iso',
+        size: stat.size,
+        mtime: mtimeMs,
+        coverPath: '',
+        folder: folder,
+        rootPath: base,
+        source: Const.SRC_LOCAL,
+        cueStart: -1,
+        cueEnd: -1
+      });
+      return out;
+    }
+    const albumName: string = info.album.length > 0 ? info.album : nameNoExt;
+    for (let i = 0; i < info.tracks.length; i++) {
+      const tk: IsoTrackJson = info.tracks[i];
+      const title: string = tk.title.length > 0 ? tk.title : `${albumName} · Track ${i + 1}`;
+      out.push({
+        id: 0,
+        uri: `iso://${path}#mwi:${i}`,
+        path: `${path}#mwi:${i}`,
+        title: title,
+        artist: info.artist,
+        album: albumName,
+        duration: tk.durationMs,
+        sampleRate: 88200,
+        bitrate: 0,
+        suffix: '.iso',
+        size: stat.size,
+        mtime: mtimeMs,
+        coverPath: '',
+        folder: folder,
+        rootPath: base,
+        source: Const.SRC_LOCAL,
+        cueStart: -1,
+        cueEnd: -1
+      });
+    }
+    Logger.info(TAG, `iso expanded: ${path} → ${out.length} tracks (dst=${info.ok})`);
+    return out;
   }
 
   /** 标签解析丢到 worker，主线程只做 IO */

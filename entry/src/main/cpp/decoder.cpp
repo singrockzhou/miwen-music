@@ -4,6 +4,7 @@
 #include "fmt_alac.h"
 #include "fmt_ape.h"
 #include "fmt_dsd.h"
+#include "fmt_iso.h"
 
 #include <cstdio>
 #include <cstring>
@@ -59,6 +60,8 @@ bool NativeHandlesSuffix(const std::string &suffix) {
     return suffix == ".aiff" || suffix == ".aif" || suffix == ".aifc" ||
            suffix == ".wv" || suffix == ".m4a" || suffix == ".ape" ||
            suffix == ".dsf" || suffix == ".dff";
+    // .iso 不在这里：ISO 是一张碟，要经扫描展开成"每曲一条记录"，
+    // 播放走 NativePlayer 的 #mwi: 虚拟路径（openSacdTrack），不走通用 open。
 }
 
 AudioSource *CreateSource(const std::string &path, std::string *why) {
@@ -130,9 +133,10 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         return CreateDffSource(path, why);
     }
 
-    // ISO（SACD 镜像）结构复杂未接；其余已规划未接入的格式返回 nullptr 由上层给话术
+    // ISO（SACD 镜像）：整碟不能直接"播放"，扫描入库时会展开成曲目并走 openSacdTrack；
+    // 若有调用拿裸 ISO 路径来播，给出引导话术
     if (sfx == ".iso") {
-        SetWhy(why, "SACD 镜像（ISO）暂不支持直读：把里面的 DFF/DSF 单独导出后可以播");
+        SetWhy(why, "SACD ISO 请先重新扫描曲库：扫描会把它展开成一张碟的曲目列表");
         return nullptr;
     }
     SetWhy(why, "没有匹配的解码器：magic=" + Hex4(head) + " 后缀=" + sfx);

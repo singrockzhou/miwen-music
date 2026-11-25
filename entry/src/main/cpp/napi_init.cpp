@@ -1,8 +1,11 @@
 #include "napi/native_api.h"
 
 #include "decoder.h"
+#include "fmt_iso.h"
 #include "fmt_rate.h"
+#include "fmt_tag.h"
 
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -64,6 +67,33 @@ napi_value Null(napi_env env) {
     napi_value nul = nullptr;
     napi_get_null(env, &nul);
     return nul;
+}
+
+std::string JsonEscape(const std::string &s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (const char c : s) {
+        switch (c) {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out.push_back(c);
+        }
+    }
+    return out;
 }
 
 napi_value MakeInfo(napi_env env, bool ok, const AudioInfo &info, int32_t id, const char *fallbackError) {
@@ -215,7 +245,7 @@ napi_value Handles(napi_env env, napi_callback_info cb) {
 /** version() → 解码器版本串，用来确认装到设备上的确实是新 .so */
 napi_value Version(napi_env env, napi_callback_info) {
     napi_value out = nullptr;
-    napi_create_string_utf8(env, "miwen-decoder/0.4 (aiff, wavpack, alac, ape, dsd)", NAPI_AUTO_LENGTH, &out);
+    napi_create_string_utf8(env, "miwen-decoder/0.5 (aiff, wavpack, alac, ape, dsd, dst, sacd-iso, tags)", NAPI_AUTO_LENGTH, &out);
     return out;
 }
 
@@ -251,6 +281,100 @@ napi_value SetRate(napi_env env, napi_callback_info cb) {
     return undef;
 }
 
+/** isoInfo(path) → JSON 字符串：{ ok, error?, album, artist, tracks: [{title,durationMs,dst}] } */
+napi_value IsoInfo(napi_env env, napi_callback_info cb) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+
+    const std::string path = GetString(env, args[0]);
+    const SacdIsoInfo info = path.empty() ? SacdIsoInfo{} : ParseSacdIso(path);
+
+    std::string json;
+    json += "{\"ok\":";
+    json += info.ok ? "true" : "false";
+    if (!info.ok) {
+        json += ",\"error\":\"" + JsonEscape(info.error) + "\"";
+    } else {
+        json += ",\"album\":\"" + JsonEscape(info.album) + "\"";
+        json += ",\"artist\":\"" + JsonEscape(info.artist) + "\"";
+        json += ",\"tracks\":[";
+        for (size_t i = 0; i < info.tracks.size(); i++) {
+            if (i != 0) {
+                json += ",";
+            }
+            const SacdIsoTrack &t = info.tracks[i];
+            json += "{\"title\":\"" + JsonEscape(t.title) + "\",";
+            json += "\"durationMs\":" + std::to_string(t.durationMs) + ",";
+            json += "\"dst\":";
+            json += t.dst ? "true" : "false";
+            json += "}";
+        }
+        json += "]";
+    }
+    json += "}";
+
+    napi_value out = nullptr;
+    napi_create_string_utf8(env, json.c_str(), json.size(), &out);
+    return out;
+}
+
+/** openSacdTrack(path, trackIndex)：SACD ISO 的第 trackIndex 首曲（扫描展开后走这里） */
+napi_value OpenSacdTrack(napi_env env, napi_callback_info cb) {
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+
+    const std::string path = GetString(env, args[0]);
+    const int32_t trackIndex = GetInt(env, args[1], -1);
+    if (path.empty() || trackIndex < 0) {
+        return MakeInfo(env, false, AudioInfo(), 0, "参数为空");
+    }
+
+    std::string why;
+    AudioSource *src = CreateSacdIsoSource(path, trackIndex, &why);
+    if (src == nullptr) {
+        return MakeInfo(env, false, AudioInfo(), 0, why.empty() ? "SACD 曲目打不开" : why.c_str());
+    }
+
+    const AudioInfo info = src->open(path);
+    if (!info.ok) {
+        src->close();
+        delete src;
+        return MakeInfo(env, false, info, 0, "SACD 曲目打不开");
+    }
+
+    const int32_t id = g_nextId++;
+    Entry e;
+    RateSource *rs = new RateSource(src, info.channels, info.sampleRate);
+    e.src = rs;
+    e.channels = info.channels;
+    g_sources[id] = e;
+    return MakeInfo(env, true, info, id, nullptr);
+}
+
+/** writeTags(path, tagsJson)：把标签写回音频文件本体（FLAC=Vorbis comment，MP3=ID3v2.3）。
+ *  返回 0 成功；非 0 失败，errOut 带原因。 */
+napi_value WriteTags(napi_env env, napi_callback_info cb) {
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+
+    const std::string path = GetString(env, args[0]);
+    const std::string tagsJson = GetString(env, args[1]);
+
+    char err[256] = {0};
+    const int rc = path.empty() || tagsJson.empty()
+        ? -1
+        : WriteAudioTags(path, tagsJson, err, sizeof(err));
+    if (rc != 0 && err[0] == '\0') {
+        std::snprintf(err, sizeof(err), "标签回写失败（未知原因）");
+    }
+    napi_value out = nullptr;
+    napi_create_string_utf8(env, err, std::strlen(err), &out);
+    return out;
+}
+
 napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
         {"open", nullptr, Open, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -261,6 +385,9 @@ napi_value Init(napi_env env, napi_value exports) {
         {"version", nullptr, Version, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stats", nullptr, Stats, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setRate", nullptr, SetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"isoInfo", nullptr, IsoInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"openSacdTrack", nullptr, OpenSacdTrack, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeTags", nullptr, WriteTags, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

@@ -3,6 +3,7 @@ import { picker } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { fileUri } from '@kit.CoreFileKit';
 import { router, promptAction } from '@kit.ArkUI';
+import { writeTags as decWriteTags } from 'libmiwen.so';
 import { Const } from '../common/Constants';
 import { Fmt } from '../common/Fmt';
 import { Logger } from '../common/Logger';
@@ -22,7 +23,8 @@ const TAG: string = 'MaintenancePage';
  * 三个动作都是「只动索引不动文件」：
  * - 重复曲目：同标题 + 同秒级时长 + 同大小成组，可整组清理或逐条移出索引；
  * - 失效路径：文件被移走/删掉后索引还挂着，可以重新定位到新文件或移出索引；
- * - 批量改标签：按文件夹批量改索引里的艺人/专辑（不改文件的 ID3 标签）。
+ * - 批量改标签：按文件夹批量改索引里的艺人/专辑；可勾选「回写文件」把修改写进
+ *   音频文件本体（v1.5.0：FLAC = Vorbis comment，MP3 = ID3v2.3；音频流字节不动）。
  */
 @Entry
 @Component
@@ -47,6 +49,8 @@ struct MaintenancePage {
   @State pickedCount: number = 0;
   @State inArtist: string = '';
   @State inAlbum: string = '';
+  /** 批量改标签时是否同时回写文件本体（v1.5.0） */
+  @State writeBack: boolean = false;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
 
@@ -195,11 +199,52 @@ struct MaintenancePage {
       promptAction.showToast({ message: '艺人 / 专辑至少填一个' });
       return;
     }
-    const tracks: Track[] = await TrackStore.pageInFolder(
-      'local', this.pickedRoot, this.pickedFolder, 0, 2000, Const.SORT_TITLE);
-    const uris: string[] = tracks.map((t: Track) => t.uri);
-    const n: number = await TrackStore.updateMeta(uris, '', this.inArtist, this.inAlbum);
-    promptAction.showToast({ message: `已更新 ${n} 条索引标签（文件未动）` });
+    this.busy = true;
+    this.step = '更新索引…';
+    try {
+      const tracks: Track[] = await TrackStore.pageInFolder(
+        'local', this.pickedRoot, this.pickedFolder, 0, 2000, Const.SORT_TITLE);
+      const uris: string[] = tracks.map((t: Track) => t.uri);
+      const n: number = await TrackStore.updateMeta(uris, '', this.inArtist, this.inAlbum);
+      let msg = `已更新 ${n} 条索引标签（文件未动）`;
+      if (this.writeBack) {
+        // v1.5.0：把修改写进文件本体（FLAC/MP3）；一个一个来，失败不中断整批
+        let ok: number = 0;
+        let skip: number = 0;
+        let fail: number = 0;
+        let lastErr: string = '';
+        this.step = '回写文件…';
+        for (const t of tracks) {
+          if (t.suffix !== '.flac' && t.suffix !== '.mp3') {
+            skip++;
+            continue;
+          }
+          try {
+            const payload: string = JSON.stringify({
+              artist: this.inArtist,
+              album: this.inAlbum
+            });
+            const why: string = decWriteTags(t.path, payload);
+            if (why.length === 0) {
+              ok++;
+            } else {
+              fail++;
+              lastErr = why;
+            }
+          } catch (e) {
+            fail++;
+            lastErr = JSON.stringify(e);
+          }
+        }
+        msg = `索引 ${n} 条；回写：成功 ${ok}，跳过 ${skip}，失败 ${fail}`;
+        if (fail > 0 && lastErr.length > 0) {
+          msg += `（${lastErr.substring(0, 40)}）`;
+        }
+      }
+      promptAction.showToast({ message: msg });
+    } finally {
+      this.busy = false;
+    }
   }
 
   // ---------------- 组件 ----------------
@@ -358,7 +403,7 @@ struct MaintenancePage {
 
             // ---- 批量改标签 ----
             this.SectionTitle('批量改索引标签', 'BATCH TAGS')
-            Text('按文件夹批量修正索引里的艺人/专辑。只改曲库数据，不写文件的 ID3 标签。')
+            Text('按文件夹批量修正索引里的艺人/专辑。可勾选"回写文件"把修改写进音频文件本体（FLAC/MP3；音频流字节不动）。')
               .fontSize(10).fontColor(this.c().dim).margin({ bottom: 10 })
             Button(this.pickedFolder.length === 0 ? '选择文件夹' :
               `${this.pickedFolder.length > 0 && this.pickedFolder === '' ? '根目录' : this.pickedFolder}（${this.pickedCount} 首）· 重选`)
@@ -380,9 +425,25 @@ struct MaintenancePage {
                 .onChange((v: string) => {
                   this.inAlbum = v;
                 })
-              this.PrimaryBtn('应用到所选文件夹', (): void => {
+              Row() {
+                Text('同时回写到文件（FLAC/MP3）')
+                  .fontSize(12).fontColor(this.c().text)
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Checkbox, isOn: this.writeBack })
+                  .selectedColor(this.c().accent)
+                  .onChange((on: boolean) => {
+                    this.writeBack = on;
+                  })
+              }
+              .width('100%')
+              .margin({ top: 10 })
+              if (this.writeBack) {
+                Text('回写直接修改音频文件本体（FLAC = Vorbis comment，MP3 = ID3v2.3），其他格式自动跳过并计数。')
+                  .fontSize(10).fontColor(this.c().faint).margin({ top: 6 })
+              }
+              this.PrimaryBtn(this.busy ? this.step : '应用到所选文件夹', (): void => {
                 this.applyMeta();
-              }, false)
+              }, this.busy)
             }
             Text('').height(40)
           }

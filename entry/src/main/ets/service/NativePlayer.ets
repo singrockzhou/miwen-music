@@ -1,10 +1,23 @@
 import { audio } from '@kit.AudioKit';
 import { open as decOpen, read as decRead, seek as decSeek, close as decClose,
   handles as decHandles, version as decVersion, stats as decStats,
-  setRate as decSetRate } from 'libmiwen.so';
+  setRate as decSetRate, openSacdTrack as decOpenSacdTrack } from 'libmiwen.so';
 import { Logger } from '../common/Logger';
 
 const TAG: string = 'NativePlayer';
+
+/** SACD ISO 虚拟曲目的 uri 方案：`<iso路径>#mwi:<trackIndex>`（扫描入库时展开） */
+export function SplitIsoUri(uri: string): string[] {
+  const at = uri.lastIndexOf('#mwi:');
+  if (at < 0) {
+    return [];
+  }
+  const idxStr = uri.substring(at + 5);
+  if (!/^\d+$/.test(idxStr)) {
+    return [];
+  }
+  return [uri.substring(0, at), idxStr];
+}
 
 /**
  * 原生解码播放通道。
@@ -66,10 +79,12 @@ export class NativePlayer {
     }
   }
 
-  /** 打开并解析文件头。失败时 error 是可直接展示的中文原因。 */
+  /** 打开并解析文件头。失败时 error 是可直接展示的中文原因。
+   *  SACD ISO 的虚拟曲目走 `#mwi:<idx>` 方案，openSacdTrack 直连 native。 */
   open(path: string): boolean {
     this.release();
-    const info = decOpen(path);
+    const isoParts = SplitIsoUri(path);
+    const info = isoParts.length === 2 ? decOpenSacdTrack(isoParts[0], parseInt(isoParts[1])) : decOpen(path);
     if (!info.ok) {
       Logger.warn(TAG, `open failed ${path}: ${info.error}`);
       this.lastError = info.error.length > 0 ? info.error : '解码器打不开该文件';

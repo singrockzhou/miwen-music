@@ -7,8 +7,8 @@
 - 兼容 / 目标：HarmonyOS 5.0.0 (API 12)
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.82 MB，已签名可直接 `hdc install`）
-- 代码规模：52 个 `.ets` 约 14,900 行 + `cpp/` 自研 10 文件约 2,070 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
-- 当前版本：v1.3.3（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC/WavPack/ALAC/**APE** 已能真播——WavPack 内嵌官方 libwavpack 5.8.1（BSD-3），ALAC 内嵌 Apple 官方解码器（Apache-2.0），APE 内嵌 Monkey's Audio 官方 MACLib 13.50（3-Clause BSD），m4a 里的 AAC 自动回退系统解码；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
+- 代码规模：54 个 `.ets` 约 16,000 行 + `cpp/` 自研 22 文件约 5,500 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
+- 当前版本：v1.5.0（Pro 2.0 全部收官：**DST 解压、SACD ISO 直读、文件标签回写**三项落地——DST 算术解码接进 DFF 链（自研编码器生成素材 roundtrip bit-exact 验证）、ISO 内两声道曲目展开成虚拟曲目（`iso://…#mwi:n`）、批量改标签可写回文件本体（FLAC Vorbis comment / MP3 ID3v2.3，音频流字节不动）；v1.4.0 已含变速不变调(WSOLA)、DSF/DFF 软解、曲库维护页、睡眠定时渐弱）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -437,6 +437,13 @@ Track → NativePlayer.open(path)
 - [ ] 鸿蒙 PC 窗口放大：内容宽度受限，不出现一行 2000px 的文字
 - [ ] 5000 首曲库：首屏 < 3s 出列表，滚动不掉帧，搜索不卡输入
 - [x] 权限列表里**没有** `ohos.permission.INTERNET`
+
+### 9.9 v1.5.0 三项收官（DST / SACD ISO / 标签回写）
+- [x] DST 解压：DFF（CMPR=DST）真机播放，`dsd-dst-1.dff`（450 帧全算术）整首播完自动接续；`dsd-dst-fir.dff`（10 帧 FIR 帧）时长 133ms 精确
+- [x] SACD ISO 直读：`sacd-test.iso` 扫描后曲库出现虚拟曲目「Miwen Track A」（艺人行 = ISO 内 SACDText 的 "Miwen Audio · Miwen SACD Test"、格式 ISO · 88.2 kHz、时长 00:06），点播全链路播放正常
+- [x] 文件标签回写：维护页批量改标签 + 「同时回写到文件」→ FLAC 写 Vorbis comment、MP3 写 ID3v2.3，拉回文件独立解析验证标签正确、音频流逐字节不动；非 FLAC/MP3 自动跳过并计数
+- [x] 回写失败路径如实：目录授权失效时 Toast 报「失败 N（打不开文件…）」，不假成功
+- [x] 目录授权失效（杀进程/重装）→ 重新授权即恢复，无需重扫
 
 ---
 

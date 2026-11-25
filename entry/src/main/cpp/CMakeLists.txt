@@ -125,6 +125,9 @@ add_library(miwen SHARED
     fmt_ape.cpp
     fmt_rate.cpp
     fmt_dsd.cpp
+    fmt_dst.cpp
+    fmt_iso.cpp
+    fmt_tag.cpp
     ${WAVPACK_SRC}
     ${ALAC_SRC}
     ${APE_SRC}

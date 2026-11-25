@@ -50,3 +50,7 @@ tools/ape_material/*.ape
 tools/ape_material/*.dll
 tools/ape_material/*.log
 tools/layout.json
+
+# ---- 设备端测试二进制（本机交叉编译产物，可按 iso_parse_test.cpp 重建）----
+tools/dsd_material/iso_parse_test
+

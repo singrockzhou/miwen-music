@@ -42,3 +42,19 @@ export const stats: (id: number) => string;
 
 /** 变速不变调（WSOLA）：0.5~2.0，1.0 直通。随时切换，不需要重建解码器。 */
 export const setRate: (id: number, rate: number) => void;
+
+/**
+ * SACD ISO 元数据（JSON 字符串，ArkTS 侧 JSON.parse）：
+ * { ok, error?, album, artist, tracks: [{ title, durationMs, dst }] }
+ */
+export const isoInfo: (path: string) => string;
+
+/** 打开 SACD ISO 的第 trackIndex 首曲（扫描入库展开后的虚拟曲目走这里）。 */
+export const openSacdTrack: (path: string, trackIndex: number) => DecodedInfo;
+
+/**
+ * 标签回写文件本体（FLAC = Vorbis comment，MP3 = ID3v2.3）。
+ * tagsJson: {"title":"..","artist":"..","album":"..","albumartist":"..","genre":"..","date":"..","track":".."}
+ * 返回空串 = 成功；非空 = 错误原因（可直接展示）。
+ */
+export const writeTags: (path: string, tagsJson: string) => string;
