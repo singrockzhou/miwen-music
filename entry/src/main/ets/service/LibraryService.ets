@@ -217,6 +217,10 @@ export class LibraryService {
     const base: string = rootPath.endsWith('/') ? rootPath.substring(0, rootPath.length - 1) : rootPath;
     const path: string = `${base}/${relClean}`;
     const stat: fs.Stat = fs.statSync(path);
+    // 目录名恰好带音频后缀（如"cue-fix.wav"目录）会被 listFile 带进来，这里剔除
+    if (!stat.isFile()) {
+      return null;
+    }
     if (stat.size < Const.MIN_BYTES) {
       return null;
     }

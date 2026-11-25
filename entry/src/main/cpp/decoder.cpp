@@ -3,6 +3,7 @@
 #include "fmt_wavpack.h"
 #include "fmt_alac.h"
 #include "fmt_ape.h"
+#include "fmt_dsd.h"
 
 #include <cstdio>
 #include <cstring>
@@ -56,7 +57,8 @@ bool NativeHandlesSuffix(const std::string &suffix) {
     // .m4a 例外：容器里可能是 AAC（AVPlayer 能解）。路由走 native，
     // open 失败且原因带「mp4 容器非 ALAC」时由 PlayerCore 回退 AVPlayer。
     return suffix == ".aiff" || suffix == ".aif" || suffix == ".aifc" ||
-           suffix == ".wv" || suffix == ".m4a" || suffix == ".ape";
+           suffix == ".wv" || suffix == ".m4a" || suffix == ".ape" ||
+           suffix == ".dsf" || suffix == ".dff";
 }
 
 AudioSource *CreateSource(const std::string &path, std::string *why) {
@@ -90,6 +92,14 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         return CreateApeSource(path, why);
     }
 
+    // DSF：'DSD ' 头块；DFF：FRM8 容器。DST 压缩在解析器里给明确话术
+    if (std::memcmp(head, "DSD ", 4) == 0) {
+        return CreateDsfSource(path, why);
+    }
+    if (std::memcmp(head, "FRM8", 4) == 0) {
+        return CreateDffSource(path, why);
+    }
+
     if (std::memcmp(head, "ftyp", 4) == 0) {
         // m4a/mp4 容器：里面的编码不一定是 ALAC（AAC 也走这个容器）。
         // CreateAlacSource 对非 ALAC 会给出「mp4 容器非 ALAC」话术，上层据此回退 AVPlayer。
@@ -113,8 +123,18 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         // 同上：改错扩展名的文件由 APE 解析器给出具体原因
         return CreateApeSource(path, why);
     }
+    if (sfx == ".dsf") {
+        return CreateDsfSource(path, why);
+    }
+    if (sfx == ".dff") {
+        return CreateDffSource(path, why);
+    }
 
-    // 已规划但解码器尚未接入，返回 nullptr 由上层给明确话术
+    // ISO（SACD 镜像）结构复杂未接；其余已规划未接入的格式返回 nullptr 由上层给话术
+    if (sfx == ".iso") {
+        SetWhy(why, "SACD 镜像（ISO）暂不支持直读：把里面的 DFF/DSF 单独导出后可以播");
+        return nullptr;
+    }
     SetWhy(why, "没有匹配的解码器：magic=" + Hex4(head) + " 后缀=" + sfx);
     return nullptr;
 }

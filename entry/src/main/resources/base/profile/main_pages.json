@@ -6,6 +6,7 @@
     "pages/ProPage",
     "pages/RootsPage",
     "pages/DataPage",
-    "pages/StatsPage"
+    "pages/StatsPage",
+    "pages/MaintenancePage"
   ]
 }

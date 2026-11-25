@@ -39,3 +39,6 @@ export const version: () => string;
 
 /** 解码器诊断串（生产环境为空串），排障期由电平日志带出。 */
 export const stats: (id: number) => string;
+
+/** 变速不变调（WSOLA）：0.5~2.0，1.0 直通。随时切换，不需要重建解码器。 */
+export const setRate: (id: number, rate: number) => void;

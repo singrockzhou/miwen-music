@@ -59,6 +59,10 @@ export class PlayerCore {
   private nativeTimer: number = -1;
   private skipTimer: number = -1;
   private sleepTimer: number = -1;
+  // 睡眠定时到点后的渐弱计时器：音量分步降到 0 再暂停（第二梯队第 17 项）
+  private sleepFadeTimer: number = -1;
+  // 「播完本专辑停」：armed 后在自动连播处检查专辑边界，命中即暂停
+  private stopAfterAlbumFlag: boolean = false;
   private bgRunning: boolean = false;
   private ducked: boolean = false;
   private errorStreak: number = 0;
@@ -79,6 +83,8 @@ export class PlayerCore {
   private listenUri: string = '';
   private listenMs: number = 0;
   private lastTickPos: number = 0;
+  // 变速不变调（Pro 2.0）：native 通道走 WSOLA，AVPlayer 走系统 setSpeed。会话级偏好
+  private rate: number = 1.0;
   // CUE 分轨（密纹 Pro）：当前曲目的时间片（毫秒），-1 表示整轨播放
   private cueStart: number = -1;
   private cueEnd: number = -1;
@@ -300,6 +306,7 @@ export class PlayerCore {
       return;
     }
     this.flushListen();
+    this.cancelSleep(); // 换歌 = 用户在场，进行中的睡眠渐弱立即取消并恢复音量
     this.index = i;
     const t: Track = this.queue[i];
     this.position = 0;
@@ -391,6 +398,8 @@ export class PlayerCore {
     if (this.queue.length === 0) {
       return;
     }
+    // 睡眠渐弱进行中手动续播：视作取消定时，音量恢复到正常
+    this.cancelSleep();
     if (this.index < 0) {
       await this.playAt(0);
       return;
@@ -436,6 +445,8 @@ export class PlayerCore {
   async pause(): Promise<void> {
     // 淡出还没走完就暂停：先把过渡结算掉，否则旧实例会继续出声直到 3 秒结束
     this.cancelFade(true);
+    // 睡眠渐弱期间手动暂停：停掉渐弱并把音量恢复，别让下一次播放哑着
+    this.cancelSleep();
     this.flushListen();
     if (this.isDemo) {
       this.stopTicker();
@@ -503,6 +514,23 @@ export class PlayerCore {
   private async advance(manual: boolean): Promise<void> {
     if (this.queue.length === 0) {
       return;
+    }
+    // 「播完本专辑停」（第二梯队第 17 项）：只看自动连播；手动切歌是用户在场，
+    // 不打断。边界两种：队列绕回 0（整张队列播完）或下一首换了专辑（乱序队列里的专辑末尾）。
+    if (!manual && this.stopAfterAlbumFlag) {
+      const cur: Track | undefined = this.queue[this.index];
+      const ni: number = this.mode === Const.MODE_SHUFFLE
+        ? this.randomIndex()
+        : (this.index + 1) % this.queue.length;
+      const nxt: Track | undefined = this.queue[ni];
+      const wrapped: boolean = this.mode !== Const.MODE_SHUFFLE && ni === 0 && this.index === this.queue.length - 1;
+      const albumEnd: boolean = cur !== undefined && nxt !== undefined && cur.album !== nxt.album;
+      if (wrapped || albumEnd) {
+        this.stopAfterAlbumFlag = false;
+        Logger.info(TAG, `stop-after-album hit (wrapped=${wrapped} albumEnd=${albumEnd}) -> pause`);
+        await this.pause();
+        return;
+      }
     }
     if (!manual && this.mode === Const.MODE_SINGLE) {
       // 播完的单曲要重新起播：completed 之后 seek 在部分版本不会重新拉流
@@ -683,20 +711,162 @@ export class PlayerCore {
     return fav;
   }
 
-  /** 睡眠定时：分钟，0 = 关闭 */
-  setSleep(minutes: number): void {
-    if (this.sleepTimer >= 0) {
-      clearTimeout(this.sleepTimer);
-      this.sleepTimer = -1;
+  /** 变速不变调（第二梯队第 9 项）：0.5~2.0，1.0 = 原速。换曲保持 */
+  setRate(rate: number): void {
+    const r: number = Math.max(0.5, Math.min(2.0, rate));
+    this.rate = r;
+    if (this.isDemo) {
+      this.notify(true);
+      return;
     }
+    if (this.isNative) {
+      if (this.native !== null) {
+        this.native.setRate(r);
+      }
+      this.notify(true);
+      return;
+    }
+    const p: media.AVPlayer | null = this.player;
+    if (p !== null) {
+      // setSpeed 是同步 void，不返回 Promise
+      p.setSpeed(this.playSpeed(r));
+    }
+    this.notify(true);
+  }
+
+  getRate(): number {
+    return this.rate;
+  }
+
+  /** 0.5~2.0 映射到 AVPlayer 的 PlaybackSpeed 枚举；AVPlayer 的变速口径由系统实现决定 */
+  private playSpeed(r: number): media.PlaybackSpeed {
+    if (r <= 0.6) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_50_X;
+    } else if (r <= 0.85) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_75_X;
+    } else if (r <= 1.1) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_00_X;
+    } else if (r <= 1.35) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_25_X;
+    } else if (r <= 1.7) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_50_X;
+    }
+    return media.PlaybackSpeed.SPEED_FORWARD_2_00_X;
+  }
+
+  /**
+   * 睡眠定时（第二梯队第 17 项）：minutes 分钟后先 10 秒线性渐弱、再暂停。
+   * 老版本是到点硬停——听着正入眠突然没声，体验很差；渐弱是主流做法。
+   * fade=false 保留硬停口径（供设置页将来做成选项）。
+   */
+  setSleep(minutes: number, fade: boolean = true): void {
+    this.cancelSleep();
     if (minutes <= 0) {
       return;
     }
     this.sleepTimer = setTimeout(() => {
-      this.pause();
       this.sleepTimer = -1;
-      Logger.info(TAG, 'sleep timer fired');
+      if (fade) {
+        this.startSleepFade();
+      } else {
+        this.pause().catch((e: Object) => Logger.warn(TAG, `sleep pause ${e}`));
+        Logger.info(TAG, 'sleep timer fired (hard)');
+      }
     }, minutes * 60000);
+    Logger.info(TAG, `sleep timer set ${minutes}min fade=${fade}`);
+  }
+
+  /** 睡眠定时是否在计时（渐弱进行中也算）——UI 据此显示「取消睡眠定时」 */
+  sleepActive(): boolean {
+    return this.sleepTimer >= 0 || this.sleepFadeTimer >= 0;
+  }
+
+  /** 「播完本专辑停」：armed 后自动连播到专辑边界（换专辑 / 队列绕回）即暂停 */
+  armStopAfterAlbum(): void {
+    this.stopAfterAlbumFlag = true;
+    this.notify(true);
+    Logger.info(TAG, 'stop-after-album armed');
+  }
+
+  stopAfterAlbumActive(): boolean {
+    return this.stopAfterAlbumFlag;
+  }
+
+  cancelStopAfterAlbum(): void {
+    if (!this.stopAfterAlbumFlag) {
+      return;
+    }
+    this.stopAfterAlbumFlag = false;
+    this.notify(true);
+  }
+
+  /** 取消睡眠定时；渐弱进行中要顺手把音量恢复，否则取消后还哑着 */
+  cancelSleep(): void {
+    if (this.sleepTimer >= 0) {
+      clearTimeout(this.sleepTimer);
+      this.sleepTimer = -1;
+    }
+    if (this.sleepFadeTimer >= 0) {
+      clearInterval(this.sleepFadeTimer);
+      this.sleepFadeTimer = -1;
+      this.restoreVolume();
+    }
+  }
+
+  /** 渐弱期间的音量恢复：不打扰 ducking（来电压低音量）的既有口径 */
+  private restoreVolume(): void {
+    if (this.isDemo) {
+      return;
+    }
+    const v: number = this.ducked ? Const.DUCK_VOLUME : 1.0;
+    try {
+      if (this.isNative) {
+        if (this.native !== null) {
+          this.native.setVolume(v);
+        }
+      } else if (this.player !== null) {
+        this.player.setVolume(v);
+      }
+    } catch (e) {
+      Logger.warn(TAG, 'restore volume failed');
+    }
+  }
+
+  /** 睡眠渐弱：10 秒 40 步线性降到 0，随后走正常暂停（暂停里会恢复音量，供下次播放） */
+  private startSleepFade(): void {
+    if (this.status !== Const.ST_PLAYING) {
+      // 已经没在响（用户先手动停了），定时到点直接无事可做
+      Logger.info(TAG, 'sleep fade skipped: not playing');
+      return;
+    }
+    Logger.info(TAG, 'sleep fade start');
+    const steps: number = 40;
+    const base: number = this.ducked ? Const.DUCK_VOLUME : 1.0;
+    let k: number = 0;
+    this.sleepFadeTimer = setInterval(() => {
+      k++;
+      if (this.sleepFadeTimer < 0) {
+        return; // 期间被 cancelSleep 清掉（用户手动操作），别再动音量
+      }
+      const v: number = base * Math.max(0, 1 - k / steps);
+      try {
+        if (this.isNative) {
+          if (this.native !== null) {
+            this.native.setVolume(v);
+          }
+        } else if (this.player !== null) {
+          this.player.setVolume(v);
+        }
+      } catch (e) {
+        Logger.warn(TAG, 'sleep fade volume failed');
+      }
+      if (k >= steps) {
+        clearInterval(this.sleepFadeTimer);
+        this.sleepFadeTimer = -1;
+        this.pause().catch((e: Object) => Logger.warn(TAG, `sleep pause ${e}`));
+        Logger.info(TAG, 'sleep fade done -> paused');
+      }
+    }, 250);
   }
 
   /** 退出到后台/切 tab 时落盘一次，供断点续播 */

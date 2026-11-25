@@ -331,6 +331,17 @@ struct DataPage {
               onTap: () => this.gate('restore')
             })
 
+            // ---- 曲库维护 ----
+            this.SectionTitle('曲库维护', 'LIBRARY CARE')
+            this.Divider()
+            SettingRow({
+              label: '重复曲目 · 失效路径 · 批量改标签',
+              value: '',
+              detail: '重复检测与清理、失效文件重新定位、按文件夹批量修正索引标签。只动索引不动文件',
+              onTap: () => router.pushUrl({ url: 'pages/MaintenancePage' })
+                  .catch((e: Object) => Logger.warn(TAG, `${e}`))
+            })
+
             // ---- 进度 / 结果 ----
             if (this.busy || this.step.length > 0 || this.lastResult.length > 0) {
               Column() {

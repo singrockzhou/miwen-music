@@ -41,6 +41,9 @@ struct PlayerPage {
   @State dragging: boolean = false;
   @State panelOpen: boolean = false;
   @State panelItems: ActionItem[] = [];
+  // 变速二级面板（速率档位）
+  @State rateOpen: boolean = false;
+  @State rateItems: ActionItem[] = [];
   /** 与 panelItems 一一对应的动作键：行的有无随歌词状态变化，用下标分发会错位 */
   @State panelKeys: string[] = [];
   @StorageProp('themeKey') themeKey: string = 'dark';
@@ -259,8 +262,26 @@ struct PlayerPage {
       items.push({ label: '清除 A-B 循环', hint: '', danger: false });
       keys.push('ab_clear');
     }
-    items.push({ label: '睡眠定时', hint: '30 分钟', danger: false });
-    keys.push('sleep');
+    items.push({
+      label: '变速不变调',
+      hint: this.core.getRate() !== 1 ? `当前 ${this.core.getRate()}×` : '0.5× ~ 2.0×',
+      danger: false
+    });
+    keys.push('rate');
+    if (this.core.sleepActive()) {
+      items.push({ label: '取消睡眠定时', hint: '定时进行中', danger: false });
+      keys.push('sleep_cancel');
+    } else {
+      items.push({ label: '睡眠定时', hint: '30 分钟 · 音量渐弱后暂停', danger: false });
+      keys.push('sleep');
+    }
+    if (this.core.stopAfterAlbumActive()) {
+      items.push({ label: '取消「播完本专辑停」', hint: '已启用：到专辑末尾自动暂停', danger: false });
+      keys.push('album_stop_cancel');
+    } else {
+      items.push({ label: '播完本专辑停', hint: '到专辑末尾自动暂停，不绕回队列开头', danger: false });
+      keys.push('album_stop');
+    }
     items.push({ label: '文件信息', hint: Fmt.bytes(t.size), danger: false });
     keys.push('info');
     this.panelItems = items;
@@ -327,10 +348,28 @@ struct PlayerPage {
     } else if (key === 'ab_none') {
       this.panelOpen = false;
       return;
+    } else if (key === 'rate') {
+      this.rateOpen = true;
+      this.rateItems = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((r: number): ActionItem => {
+        return {
+          label: r === 1 ? '原速' : `${r}×`,
+          hint: r === this.core.getRate() ? '当前' : '',
+          danger: false
+        };
+      });
     } else if (key === 'sleep') {
       this.core.setSleep(30);
-      promptAction.showToast({ message: '30 分钟后自动暂停' });
-    } else {
+      promptAction.showToast({ message: '30 分钟后音量渐弱并暂停' });
+    } else if (key === 'sleep_cancel') {
+      this.core.cancelSleep();
+      promptAction.showToast({ message: '睡眠定时已取消' });
+    } else if (key === 'album_stop') {
+      this.core.armStopAfterAlbum();
+      promptAction.showToast({ message: '播完本专辑后自动暂停' });
+    } else if (key === 'album_stop_cancel') {
+      this.core.cancelStopAfterAlbum();
+      promptAction.showToast({ message: '已取消「播完本专辑停」' });
+    } else if (key === 'info') {
       promptAction.showToast({
         message: `${Fmt.fmt(t.suffix)} · ${Fmt.rate(t.sampleRate)} · ${Fmt.bytes(t.size)}`,
         duration: 2600
@@ -842,6 +881,28 @@ struct PlayerPage {
           onPick: (i: number) => this.onPanelPick(i),
           onClose: () => {
             this.panelOpen = false;
+          }
+        })
+      }
+
+      if (this.rateOpen) {
+        ActionPanel({
+          title: '变速不变调',
+          subtitle: '音高不动，只改速度；原速可随时恢复',
+          items: this.rateItems,
+          onPick: (i: number) => {
+            this.rateOpen = false;
+            const speeds: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+            if (i >= 0 && i < speeds.length) {
+              const r: number = speeds[i];
+              this.core.setRate(r);
+              promptAction.showToast({
+                message: r === 1 ? '已恢复原速' : `变速 ${r}×（音高不变）`
+              });
+            }
+          },
+          onClose: () => {
+            this.rateOpen = false;
           }
         })
       }

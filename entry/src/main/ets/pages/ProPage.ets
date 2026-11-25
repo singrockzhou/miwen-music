@@ -52,17 +52,20 @@ struct ProPage {
     { name: '自建解码链 · AIFF', desc: '系统解不了的自己解：AIFF / AIFC 直解 PCM 输出', tag: '已实装' },
     { name: '自建解码链 · WavPack', desc: '内嵌 libwavpack：.wv 无损 / hybrid，.wvc 校正文件一并挂上', tag: '已实装' },
     { name: '自建解码链 · ALAC', desc: '内嵌 Apple 官方解码器：m4a 里的 ALAC 直解；AAC 仍走系统', tag: '已实装' },
-    { name: '自建解码链 · APE', desc: '内嵌 Monkey\'s Audio 官方 MACLib（3-Clause BSD）：官方快速 Seek，全格式解码完成', tag: '已实装' }
+    { name: '自建解码链 · APE', desc: '内嵌 Monkey\'s Audio 官方 MACLib（3-Clause BSD）：官方快速 Seek，全格式解码完成', tag: '已实装' },
+    { name: '变速不变调', desc: '0.5–2.0× 原生 WSOLA，音高不动；AVPlayer 侧走系统变速', tag: '已实装' },
+    { name: 'DSD 直读', desc: 'dsf / dff 软解转 PCM（88.2k/176.4k）；DST 压缩与 ISO 给明确话术', tag: '已实装' },
+    { name: '曲库维护', desc: '重复曲目检测清理、失效路径重新定位、按文件夹批量改索引标签', tag: '已实装' },
+    { name: '睡眠定时进阶', desc: '到点 10 秒音量渐弱再暂停；另加「播完本专辑停」', tag: '已实装' }
   ];
 
   private readonly featNext: ProFeat[] = [
-    { name: '变速不变调', desc: '0.5–2.0× 变速，音高不动（依赖自建解码链）', tag: '下一梯队' },
-    { name: 'DSD 直读', desc: 'dsf / dff / ISO 解码与 DoP 输出提示', tag: 'Pro 2.0' }
+    { name: 'DST 解压', desc: 'DST 压缩的 DFF 无损解压链', tag: '下一梯队' }
   ];
 
   private readonly featLater: ProFeat[] = [
-    { name: 'DSD 直读', desc: 'dsf / dff / ISO 解码与 DoP 输出，依赖解码链扩展', tag: '规划中' },
-    { name: '标签编辑', desc: '在密纹里改标题与封面，不装第二个应用', tag: '规划中' }
+    { name: 'SACD ISO 直读', desc: '镜像容器解析与多区提取，依赖 DST 解压', tag: '规划中' },
+    { name: '文件标签回写', desc: '在密纹里改标题与封面并写回文件（当前只改索引）', tag: '规划中' }
   ];
 
   private c(): Tokens {

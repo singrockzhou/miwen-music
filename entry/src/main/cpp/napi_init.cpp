@@ -1,6 +1,7 @@
 #include "napi/native_api.h"
 
 #include "decoder.h"
+#include "fmt_rate.h"
 
 #include <cstring>
 #include <map>
@@ -119,7 +120,9 @@ napi_value Open(napi_env env, napi_callback_info cb) {
 
     const int32_t id = g_nextId++;
     Entry e;
-    e.src = src;
+    // 统一包一层 WSOLA 变速链：rate=1 时直通零开销，变速随时切换不需要重建解码器
+    RateSource *rs = new RateSource(src, info.channels, info.sampleRate);
+    e.src = rs;
     e.channels = info.channels;
     g_sources[id] = e;
     return MakeInfo(env, true, info, id, nullptr);
@@ -212,7 +215,7 @@ napi_value Handles(napi_env env, napi_callback_info cb) {
 /** version() → 解码器版本串，用来确认装到设备上的确实是新 .so */
 napi_value Version(napi_env env, napi_callback_info) {
     napi_value out = nullptr;
-    napi_create_string_utf8(env, "miwen-decoder/0.3 (aiff, wavpack, alac, ape)", NAPI_AUTO_LENGTH, &out);
+    napi_create_string_utf8(env, "miwen-decoder/0.4 (aiff, wavpack, alac, ape, dsd)", NAPI_AUTO_LENGTH, &out);
     return out;
 }
 
@@ -228,6 +231,26 @@ napi_value Stats(napi_env env, napi_callback_info cb) {
     return out;
 }
 
+/** setRate(id, rate)：0.5~2.0 变速不变调（WSOLA）；1.0 直通。随时切换，不需重建解码器 */
+napi_value SetRate(napi_env env, napi_callback_info cb) {
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+    Entry *e = Find(GetInt(env, args[0], -1));
+    if (e != nullptr) {
+        double rate = 1.0;
+        if (napi_get_value_double(env, args[1], &rate) != napi_ok) {
+            rate = 1.0;
+        }
+        if (auto *rs = dynamic_cast<RateSource *>(e->src)) {
+            rs->setRate(rate);
+        }
+    }
+    napi_value undef = nullptr;
+    napi_get_undefined(env, &undef);
+    return undef;
+}
+
 napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
         {"open", nullptr, Open, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -237,6 +260,7 @@ napi_value Init(napi_env env, napi_value exports) {
         {"handles", nullptr, Handles, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"version", nullptr, Version, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stats", nullptr, Stats, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setRate", nullptr, SetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

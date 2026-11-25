@@ -1,5 +1,6 @@
 import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { fileUri } from '@kit.CoreFileKit';
 import { Const } from '../common/Constants';
 import { Logger } from '../common/Logger';
 import { Album, Track } from '../model/Track';
@@ -11,6 +12,14 @@ const TAG: string = 'TrackStore';
 export interface PathRow {
   path: string;
   uri: string;
+}
+
+/** 重复指纹（第二梯队第 13 项）：标题 + 秒级时长 + 文件大小 */
+export interface DupFingerprint {
+  title: string;
+  dsec: number;
+  size: number;
+  count: number;
 }
 
 /**
@@ -634,6 +643,93 @@ export class TrackStore {
       return 'sample_rate DESC, title COLLATE NOCASE ASC';
     }
     return 'mtime DESC, id DESC';
+  }
+
+  // ---------------- 曲库维护（第二梯队第 13 / 14 项）----------------
+
+  /**
+   * 重复指纹候选组：标题 + 秒级时长 + 文件大小完全一致才成组。
+   * 时长用秒级容差——同一文件复制出来毫秒数可能差个位数，秒级归一能兜住；
+   * 只在 SQL 里做粗筛，精确成组交给上层按指纹回查。
+   */
+  static async dupFingerprints(source: string): Promise<DupFingerprint[]> {
+    const rs: relationalStore.ResultSet = await TrackStore.db.querySql(
+      `SELECT title, CAST(duration / 1000 AS INTEGER) AS dsec, size, COUNT(*) AS c
+       FROM track WHERE source = ? AND cue_start < 0
+       GROUP BY title, dsec, size HAVING COUNT(*) > 1
+       ORDER BY c DESC, title COLLATE NOCASE LIMIT 200`,
+      [source]);
+    const out: DupFingerprint[] = [];
+    while (rs.goToNextRow()) {
+      out.push({
+        title: rs.getString(rs.getColumnIndex('title')),
+        dsec: rs.getLong(rs.getColumnIndex('dsec')),
+        size: rs.getLong(rs.getColumnIndex('size')),
+        count: rs.getLong(rs.getColumnIndex('c'))
+      });
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 按指纹回查组内曲目（含 CUE 分轨——分轨与整轨指向同一文件，一并呈现） */
+  static async listByFingerprint(source: string, fp: DupFingerprint): Promise<Track[]> {
+    const rs: relationalStore.ResultSet = await TrackStore.db.querySql(
+      `SELECT * FROM track WHERE source = ? AND title = ? AND size = ?
+         AND CAST(duration / 1000 AS INTEGER) = ?
+       ORDER BY cue_start ASC, id ASC`,
+      [source, fp.title, fp.size, fp.dsec]);
+    const out: Track[] = [];
+    while (rs.goToNextRow()) {
+      out.push(TrackStore.readRow(rs));
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 从索引移除单条（重复清理 / 失效条目清理共用） */
+  static async removeUri(uri: string): Promise<void> {
+    await TrackStore.db.executeSql('DELETE FROM track WHERE uri = ?', [uri]);
+  }
+
+  /**
+   * 失效路径重定位：换新文件后路径与 uri 都要换，元数据保留。
+   * root_path / folder 按"清空孤儿"口径处理：新路径的根由下次重扫认领，
+   * 先挂到孤儿区，避免伪造 root 导致文件夹视图错分组。
+   */
+  static async relocate(uri: string, newPath: string): Promise<void> {
+    const newUri: string = fileUri.getUriFromPath(newPath);
+    await TrackStore.db.executeSql(
+      'UPDATE track SET path = ?, uri = ?, root_path = ?, folder = ? WHERE uri = ?',
+      [newPath, newUri, '', '', uri]);
+  }
+
+  /** 批量修正索引内标签（不改文件）：空串字段表示不改 */
+  static async updateMeta(uris: string[], title: string, artist: string, album: string): Promise<number> {
+    const sets: string[] = [];
+    const args: relationalStore.ValueType[] = [];
+    if (title.length > 0) {
+      sets.push('title = ?');
+      args.push(title);
+    }
+    if (artist.length > 0) {
+      sets.push('artist = ?');
+      args.push(artist);
+    }
+    if (album.length > 0) {
+      sets.push('album = ?');
+      args.push(album);
+    }
+    if (sets.length === 0 || uris.length === 0) {
+      return 0;
+    }
+    const marks: string = uris.map((u: string) => '?').join(',');
+    for (const u of uris) {
+      args.push(u);
+    }
+    await TrackStore.db.executeSql(
+      `UPDATE track SET ${sets.join(', ')} WHERE uri IN (${marks})`, args);
+    return uris.length;
   }
 
   private static readRow(rs: relationalStore.ResultSet): Track {

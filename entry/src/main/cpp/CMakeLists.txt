@@ -123,6 +123,8 @@ add_library(miwen SHARED
     fmt_wavpack.cpp
     fmt_alac.cpp
     fmt_ape.cpp
+    fmt_rate.cpp
+    fmt_dsd.cpp
     ${WAVPACK_SRC}
     ${ALAC_SRC}
     ${APE_SRC}

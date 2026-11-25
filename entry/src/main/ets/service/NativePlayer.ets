@@ -1,6 +1,7 @@
 import { audio } from '@kit.AudioKit';
 import { open as decOpen, read as decRead, seek as decSeek, close as decClose,
-  handles as decHandles, version as decVersion, stats as decStats } from 'libmiwen.so';
+  handles as decHandles, version as decVersion, stats as decStats,
+  setRate as decSetRate } from 'libmiwen.so';
 import { Logger } from '../common/Logger';
 
 const TAG: string = 'NativePlayer';
@@ -35,6 +36,13 @@ export class NativePlayer {
   private onInterrupt: ((event: audio.InterruptEvent) => void) | null = null;
   /** 直出模式：旁路系统音效。AudioRenderer 也开放了 setAudioEffectMode，与 AVPlayer 同口径 */
   private direct: boolean = false;
+  /** 变速不变调（Pro 2.0）：WSOLA 在 native 侧做；1.0 = 原速直通 */
+  private rate: number = 1.0;
+  /**
+   * 源时间轴帧数（变速折算后的累计源帧）。变速时 read 返回的是"输出帧"，
+   * 直接当进度用会错 rate 倍——按 gotFrames*rate 折算回源帧，seek 时置为落点。
+   */
+  private srcFrames: number = 0;
   /** 输出电平统计：每 2 秒一条 rms 日志 */
   private rmsSum: number = 0;
   private rmsCount: number = 0;
@@ -73,10 +81,17 @@ export class NativePlayer {
     this.totalFrames = info.totalFrames;
     this.durationMs = info.durationMs;
     this.writtenFrames = 0;
+    this.srcFrames = 0;
     this.ended = false;
     this.rmsSum = 0;
     this.rmsCount = 0;
     this.rmsNextFrame = this.sampleRate * 2;
+    // 变速是会话级偏好：换曲保持，open 后立即应用到新句柄
+    try {
+      decSetRate(this.id, this.rate);
+    } catch (e) {
+      Logger.warn(TAG, `setRate on open failed ${JSON.stringify(e)}`);
+    }
 
     if (this.channels < 1 || this.channels > 2) {
       this.lastError = `暂不支持 ${this.channels} 声道（当前支持单声道与立体声）`;
@@ -112,7 +127,22 @@ export class NativePlayer {
     if (this.sampleRate <= 0) {
       return 0;
     }
-    return Math.floor(this.writtenFrames * 1000 / this.sampleRate);
+    // 进度走"源时间轴"：变速时输出帧 ×rate 才是真实播放位置
+    return Math.floor(this.srcFrames * 1000 / this.sampleRate);
+  }
+
+  /** 变速不变调：0.5~2.0；1.0 = 原速。播放中即时生效，换曲保持 */
+  setRate(rate: number): void {
+    const r: number = Math.max(0.5, Math.min(2.0, rate));
+    this.rate = r;
+    if (this.id !== 0) {
+      try {
+        decSetRate(this.id, r);
+      } catch (e) {
+        Logger.warn(TAG, `setRate failed ${JSON.stringify(e)}`);
+      }
+    }
+    Logger.info(TAG, `rate -> ${r}`);
   }
 
   setEndCallback(cb: () => void): void {
@@ -192,6 +222,7 @@ export class NativePlayer {
       return this.getPositionMs();
     }
     this.writtenFrames = landed;
+    this.srcFrames = landed;
     this.ended = false;
     return this.getPositionMs();
   }
@@ -296,6 +327,7 @@ export class NativePlayer {
     const gotFrames: number = Math.floor(got.length / this.channels);
     dst.set(got, 0);
     this.writtenFrames += gotFrames;
+    this.srcFrames += gotFrames * this.rate;
     this.trackLevel(got);
     if (gotFrames < wantFrames) {
       dst.fill(0, got.length);
@@ -356,6 +388,7 @@ export class NativePlayer {
     this.playing = false;
     this.ended = false;
     this.writtenFrames = 0;
+    this.srcFrames = 0;
     this.rmsSum = 0;
     this.rmsCount = 0;
     this.rmsNextFrame = 0;

@@ -4,7 +4,7 @@
 export class Const {
   static readonly APP_NAME: string = '密纹音乐';
   static readonly APP_EN: string = 'LOCAL RECORD STORE';
-  static readonly VERSION: string = '1.3.3';
+  static readonly VERSION: string = '1.4.0';
 
   /** preferences 文件名 */
   static readonly PREF_NAME: string = 'miwen_pref';
@@ -71,7 +71,9 @@ export class Const {
     '.mp3', '.flac', '.m4a', '.aac', '.wav', '.ogg', '.mka', '.ape',
     // 全格式识别层（第二梯队第 7/11 项）：先扫进来、明确标记"暂不支持"，
     // 每接通一种原生解码就从 UNDECODED 挪走一个
-    '.dsf', '.dff', '.iso', '.wv', '.aiff', '.aif', '.aifc'
+    '.iso', '.wv', '.aiff', '.aif', '.aifc',
+    // v1.4.0：DSD 软解已由 libmiwen.so 接过（fmt_dsd），直接进扫描名单
+    '.dsf', '.dff'
   ];
   /** CUE 描述文件扩展名 */
   static readonly CUE_SUFFIX: string = '.cue';
@@ -79,12 +81,12 @@ export class Const {
    * 这些格式识别入库但系统解码器播不动（鸿蒙 AVPlayer 对 APE/DSD/WavPack/AIFF 无解）。
    * 点播时给"为什么播不了"的明确话术，而不是笼统的格式错误。
    *
-   * AIFF/AIFC 已由 libmiwen.so 原生解码接过（v1.3.0）、WavPack 已接过（v1.3.1）、
-   * ALAC/m4a 已接过（v1.3.2）、APE 已接过（v1.3.3），从这里移出；
-   * 但能否真播仍由 NativePlayer.handles(suffix) 决定，两处口径必须一致。
+   * AIFF/AIFC（v1.3.0）、WavPack（v1.3.1）、ALAC/m4a（v1.3.2）、APE（v1.3.3）、
+   * DSD 的 dsf/dff（v1.4.0，软解转 PCM）都已由 libmiwen.so 接过，从这里移出；
+   * ISO（SACD 镜像）仍走识别层话术。
    */
   static readonly UNDECODED_SUFFIX: string[] = [
-    '.dsf', '.dff', '.iso'
+    '.iso'
   ];
   /** 扫描时跳过的目录名（彩铃/录音这类短音频重灾区） */
   static readonly SKIP_DIRS: string[] = ['Sounds', 'SoundRecorder'];
