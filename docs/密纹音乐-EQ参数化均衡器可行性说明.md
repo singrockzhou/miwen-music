@@ -1,6 +1,7 @@
 # 密纹音乐 · EQ / 参数化均衡器可行性说明
 
 - 撰写日期：2026-11-25（基于 v1.7.0 代码现状）
+- **2026-11-25 复核**：应用户要求按「`targetSdkVersion` 不低于 26.0.0」的上架口径重新核实，关键结论不变，证据链补强（见 3.2/3.3/3.5 与证据清单 #8–#10）
 - 结论用途：内部沟通与对外解释均可直接引用
 - 证据标注规则：**[已核实]**（SDK 头文件/官方文档/真机日志/源码一手证据）、**[推断]**（工程判断）、**[待确认]**（缺信息）
 
@@ -20,10 +21,10 @@
 
 | 当时证据 | 出处 | 今天的状态 |
 |---|---|---|
-| 全 SDK 无 `AudioEffectManager` / 频段增益接口 | SDK `ets/api/` 全量 grep，0 条 | 仍成立（API 12 SDK 口径） |
+| 全 SDK 无 `AudioEffectManager` / 频段增益接口 | SDK `ets/api/` 全量 grep，0 条 | 仍成立，且已按 API 26 官方 API diff 复核（见 3.2） |
 | `AudioEffectMode` 仅 `EFFECT_NONE`/`EFFECT_DEFAULT` 两值 | `@ohos.multimedia.audio.d.ts:7852` | 仍成立 |
-| `AudioLoopbackEqualizerPreset` 仅作用于耳返 | `audio.d.ts:8459` | 仍成立 |
-| `getAudioEffectInfoArray(MUSIC)` 真机仅返回 2 种模式 | `.verify/pro-11-probe.jpeg`（真机探测） | 仍成立 |
+| `AudioLoopbackEqualizerPreset` 仅作用于耳返 | `audio.d.ts:8459` | 仍成立（API 26 对 AudioLoopback 的新增也只是音量/设备对，非频段增益） |
+| `getAudioEffectInfoArray(MUSIC)` 真机仅返回 2 种模式 | `.verify/pro-11-probe.jpeg`（真机探测） | 仍成立；该真机即 API 26（HarmonyOS 7.0.0.111），运行时证据直接适用 |
 
 **但当时隐藏了一个前提**：所有证据都围绕 AVPlayer 通道（当时的唯一播放通道）。文档同时写了"若坚持要 EQ，唯一路径是 AudioRenderer + Native 解码自建链路（XL），不建议在 Pro 1.x 阶段碰"——这句话精确预言了路径，只是成本判断基于"内核还不存在"的当时现状。**v1.3.0–v1.5.0，这个内核已经建成**（见第四节）。
 
@@ -37,21 +38,37 @@
 
 `AVPlayer` 是黑盒：解码在系统内完成，应用拿不到 PCM，也没有效果插入接口。`AVPlayer.audioEffectMode` 只能设 NONE/DEFAULT 两态（`@ohos.multimedia.media.d.ts:2997`）。**任何**用 AVPlayer 播 MP3/AAC 的鸿蒙播放器，都不可能给这两个格式挂上应用侧 EQ。
 
-### 3.2 API 12 SDK 无频段增益接口（旧结论的核心证据）
+### 3.2 SDK 无频段增益接口（API 12 与 API 26 双口径核实，结论一致）
 
-见第二节表格，四条证据至今成立。社区博客中流传的 `getAudioEffectManager().setEqualizerConfig()` 之类写法在官方 SDK 中**查无此符号**（本项目 2026-11-24 全量 grep 为 0 条）[已核实]，按一手证据规则不采信。
+**旧证据（API 12 SDK 口径，2026-11-24）**：全 SDK 无 `AudioEffectManager` / 频段增益接口（`ets/api/` 全量 grep 0 条）；`AudioEffectMode` 仅 `EFFECT_NONE`/`EFFECT_DEFAULT`（`@ohos.multimedia.audio.d.ts:7852`）；`AudioLoopbackEqualizerPreset` 仅耳返（`audio.d.ts:8459`）。
 
-### 3.3 API 22 新增的 AudioSuite EQ 节点：存在，但有两个硬伤
+**新证据（API 26 口径，2026-11-25）**：华为官方《Audio Kit API Change List》（26.0.0）[已核实]逐条核对了 `@ohos.multimedia.audio.d.ts` 在 API 26 的全部新增——与播放音效相关的只有 `AudioCapturer.setNoiseReductionMode` 系列（**录制侧**降噪，不作用于播放）、`SAMPLE_RATE_384000` 枚举、`isDirectPlaybackSupported`/`isOffloadPlaybackSupported` 等设备能力查询；**播放侧没有任何 EQ / 频段增益接口加入**。同时，2026-11-24 的运行时探测（`getAudioEffectInfoArray` 仅返回 NONE/DEFAULT 两态）本来就是在 **HarmonyOS 7.0.0.111 / API 26 真机**上做的——运行时证据天然就是 API 26 口径，直接适用。社区博客中流传的 `getAudioEffectManager().setEqualizerConfig()` 之类写法在官方 SDK 与 API diff 中**查无此符号**[已核实]，不采信。
 
-华为官方文档（capi-native-audio-suite-base.h）[已核实]：
+### 3.3 AudioSuite EQ 效果节点（API 22 起，targetSdk 26 下可用）：硬伤不变
+
+华为官方文档（capi-native_audio_suite_base.h）[已核实]：
 
 - `EFFECT_NODE_TYPE_EQUALIZER = 201`，**Since: 22**，10 个固定频段（31Hz–16kHz），增益 ±10dB；
-- **硬伤一：固定输出格式契约 48000Hz / S16LE / 2ch**。对 Hi-Res 播放器意味着把 176.4kHz/32bit float 的 DSD 转出信号降格到 48k/16bit 才能进 EQ——音质损失与本产品"还原"的定位直接冲突；
-- **硬伤二：只有固定频段图形 EQ，没有参数化**——无自由频点、无 Q 值、无 Low/High Shelf、无 PreAmp。"参数化均衡器"系统在任何版本都没提供。
+- **硬伤一：效果节点固定输出格式契约 48000Hz / S16LE / 2ch**。API 26 对 AudioSuite 的改动是放开实时预览管线数量限制（26 前最多 1 条）、新增 HOA 节点、声道数扩展（1–9 及 16）[已核实]——**EQ 节点的降格契约没有任何变化**，官方 7.0 主打的也是降噪/美化/变声/空间渲染而非 EQ。对 Hi-Res 播放器意味着把 176.4kHz/32bit float 的 DSD 转出信号降格到 48k/16bit 才能进 EQ——音质损失与本产品"还原"的定位直接冲突；
+- **硬伤二：只有固定频段图形 EQ，没有参数化**——无自由频点、无 Q 值、无 Low/High Shelf、无 PreAmp。"参数化均衡器"系统在任何版本（含 26）都没提供；
+- **附带的成熟度信号**：社区实测记录"EQ 节点创建后不设增益会引发系统库崩溃"[推断，社区一手实测非官方]，进一步说明系统节点路径不可托付核心功能。
 
 ### 3.4 系统级全局 EQ 是系统能力
 
 影响所有输出流的全局均衡器属于系统/预置应用能力，第三方应用拿不到（3.2 的证据同样覆盖此点）。**若有竞品声称做了"全局 EQ"，要么是逐应用自行处理，要么使用了不可持续的非公开手段**[推断]——按我们自己的口径，这属于做不到且不试图绕过的事项。
+
+### 3.5 「targetSdkVersion 不低于 26.0.0」要求的专项影响评估
+
+**当前实配**：`build-profile.json5` 为 `compatibleSdkVersion: 5.0.0(12)` / `targetSdkVersion: 5.0.0(12)`[已核实]，按上架要求需升级到 26.0.0（真机 HarmonyOS 7.0.0.111 / API 26 已在验证环境就位）。该要求对 EQ 可行性结论的影响逐项评估：
+
+| 评估项 | 影响 | 结论 |
+|---|---|---|
+| ArkTS 播放侧 EQ 接口 | API 26 官方 API diff 证实播放侧无新增频段增益接口（3.2） | **系统不给频段增益的结论在 26 口径下依然成立** |
+| AudioSuite EQ 节点可用性 | Since 22，targetSdk 26 下无需任何额外动作即可用；API 26 还放开了实时管线数量限制 | 节点"可用"，但 48k/S16LE/2ch 降格契约与无参数化两点未变（3.3），**可用 ≠ 适用** |
+| 自研 biquad 路径 | 纯 C++ DSP，不依赖任何 SDK 版本/新增 API，targetSdk 12 或 26 下行为完全一致 | **与升级解耦，零影响** |
+| 升级本身的工作 | `compatibleSdkVersion` 保持 12（向下兼容）+ `targetSdkVersion` 升 26，需按官方变更清单做一次全功能回归（Audio Kit API 26 变更集中在录制侧与设备查询，播放链路 API 签名基本未动）[推断] | 是上架前置工作，**不属于 EQ 的成本**；建议独立排期，与 EQ 实装解耦 |
+
+**一句话**：targetSdk 26 要求不改变本说明的任何结论，反而让证据更干净——API 26 官方变更清单亲手确认了"播放侧无频段增益接口"，且真机运行时验证环境（API 26）早已就位。
 
 ---
 
@@ -120,7 +137,7 @@ EQ 关闭 = 与现在的直出模式完全等价（逐样本旁路，零改动�
 |---|---|---|
 | "鸿蒙平台做不了 EQ" | **不成立**（就本项目而言） | 系统不做，应用自己做；解码链我们已自建 |
 | "AVPlayer 通道挂不上 EQ" | **成立** | MP3/AAC 回退通道拿不到 PCM，除非补自解 |
-| "系统没有参数化 EQ 接口" | **成立且永久** | 任何版本的系统都只给过（API 22 起）固定 10 频段图形 EQ，且 48k/16bit 降格 |
+| "系统没有参数化 EQ 接口" | **成立且永久** | API 12 与 API 26 双口径核实：任何版本的系统只给过（API 22 起）固定 10 频段图形 EQ，且 48k/16bit 降格契约在 API 26 依然未变 |
 | "当时不值得做" | **当时成立** | XL 成本判断正确；如今内核已建，增量为 M，判断需要更新 |
 
 ---
@@ -150,9 +167,9 @@ EQ 关闭 = 与现在的直出模式完全等价（逐样本旁路，零改动�
 
 ## 九、结论（可直接引用的三个层次）
 
-1. **客观平台限制**：鸿蒙系统不向第三方提供参数化 EQ；系统播放器（AVPlayer）无 DSP 插入点；系统自带的 EQ 效果节点（API 22+）固定 48k/16bit 输出且无参数化能力，对 Hi-Res 产品不可用。这些限制对所有鸿蒙播放器一视同仁。
-2. **当前项目条件**：旧结论"做不了 EQ"的前提（未自建解码链）已被 v1.3–v1.7 的事实推翻——解码链、渲染写入点、浮点链、DSP 能力全部在位，缺的只是一个 biquad 模块和一套 UI，成本 M。
-3. **行动建议**：将 EQ / 参数化均衡器列入 v1.8.0 候选，作为 Pro 付费功能实装（含真机基准验证）；对外口径从"系统没接口做不了"更新为"系统不做调音，我们自研解码链自己做，且不做 48k/16bit 的降格调音"。
+1. **客观平台限制**：鸿蒙系统不向第三方提供参数化 EQ（API 12 与 API 26 双口径核实一致）；系统播放器（AVPlayer）无 DSP 插入点；系统自带的 EQ 效果节点（API 22+，targetSdk 26 下可用）固定 48k/16bit 输出且无参数化能力，对 Hi-Res 产品不可用。这些限制对所有鸿蒙播放器一视同仁，「targetSdkVersion 不低于 26.0.0」的上架要求不改变其中任何一条。
+2. **当前项目条件**：旧结论"做不了 EQ"的前提（未自建解码链）已被 v1.3–v1.7 的事实推翻——解码链、渲染写入点、浮点链、DSP 能力全部在位，缺的只是一个 biquad 模块和一套 UI，成本 M；自研路径不依赖任何 SDK 新 API，targetSdk 12→26 升级与之解耦。
+3. **行动建议**：将 EQ / 参数化均衡器列入 v1.8.0 候选，作为 Pro 付费功能实装（含真机基准验证）；targetSdk 升级作为独立的上架前置工作另行排期；对外口径从"系统没接口做不了"更新为"系统不做调音，我们自研解码链自己做，且不做 48k/16bit 的降格调音"。
 
 ---
 
@@ -161,9 +178,12 @@ EQ 关闭 = 与现在的直出模式完全等价（逐样本旁路，零改动�
 | # | 证据 | 类型 | 出处 |
 |---|---|---|---|
 | 1 | SDK 无 AudioEffectManager、AudioEffectMode 两态、Loopback EQ 仅耳返 | 已核实 | 《密纹音乐-Pro版技术验证》第三节（audio.d.ts:7852/8459、media.d.ts:2997） |
-| 2 | 真机 getAudioEffectInfoArray 仅 2 模式 | 已核实 | 同上第四节（.verify/pro-11-probe.jpeg） |
-| 3 | AudioSuite EQ 节点：Since 22、10 频段 ±10dB、固定 48k/S16LE/2ch、无参数化 | 已核实 | 华为官方文档 capi-native-audio-suite-base.h / OH_EqualizerFrequencyBandGains |
+| 2 | 真机 getAudioEffectInfoArray 仅 2 模式（设备 HarmonyOS 7.0.0.111 / API 26） | 已核实 | 同上第四节（.verify/pro-11-probe.jpeg）；设备信息见该报告头部 |
+| 3 | AudioSuite EQ 节点：Since 22、10 频段 ±10dB、固定 48k/S16LE/2ch、无参数化 | 已核实 | 华为官方文档 capi-native_audio_suite_base.h / OH_EqualizerFrequencyBandGains |
 | 4 | 自建解码链与 fill() 插入点、WSOLA 已实装 | 已核实 | README 模块结构；《交付说明》v1.3–v1.5 段；fmt_* / NativePlayer.ets 源码 |
 | 5 | 海贝 PEQ 为自研引擎 + 应用内 DSP；DSD/MQA 场景不启用数字调音；鸿蒙版在架 | 已核实 | HiBy 官网下载页；海贝官方公众号《PEQ 与 MSEB 到底强在哪》；第三方应用介绍页 |
 | 6 | 社区博客 `setEqualizerConfig` 等写法 | 不采信 | SDK 全量 grep 0 条，与官方文档不符 |
 | 7 | MP3 自解可用 mpg123/minimp3 补齐、成本与验证基准估算、排期版本 | 推断/待确认 | 工程判断；AAC 方案待调研 |
+| 8 | **API 26 @ohos.audio 全部新增无播放侧频段增益接口**（新增为 Capturer 录制侧降噪 / SAMPLE_RATE_384000 / direct-offload 查询等） | 已核实 | 华为官方《Audio Kit API Change List》26.0.0（js-apidiff-audiokit） |
+| 9 | AudioSuite API 26 变化仅放开实时管线数量限制 + HOA 节点 + 声道扩展，EQ 节点契约未变 | 已核实 | 华为官方《音频编创开发概述(C/C++)》audio-suite 指南 |
+| 10 | 项目当前实配 compatibleSdkVersion/targetSdkVersion = 5.0.0(12)，需按上架要求升至 26.0.0 | 已核实 | build-profile.json5:22–23 |
