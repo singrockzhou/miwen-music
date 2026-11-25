@@ -51,11 +51,11 @@ struct ProPage {
     { name: '桌面歌词', desc: '系统桌面歌词 + 锁屏歌词 + 播控中心歌词，一份数据三处显示', tag: '已实装' },
     { name: '自建解码链 · AIFF', desc: '系统解不了的自己解：AIFF / AIFC 直解 PCM 输出', tag: '已实装' },
     { name: '自建解码链 · WavPack', desc: '内嵌 libwavpack：.wv 无损 / hybrid，.wvc 校正文件一并挂上', tag: '已实装' },
-    { name: '自建解码链 · ALAC', desc: '内嵌 Apple 官方解码器：m4a 里的 ALAC 直解；AAC 仍走系统', tag: '已实装' }
+    { name: '自建解码链 · ALAC', desc: '内嵌 Apple 官方解码器：m4a 里的 ALAC 直解；AAC 仍走系统', tag: '已实装' },
+    { name: '自建解码链 · APE', desc: '内嵌 Monkey\'s Audio 官方 MACLib（3-Clause BSD）：官方快速 Seek，全格式解码完成', tag: '已实装' }
   ];
 
   private readonly featNext: ProFeat[] = [
-    { name: '全格式解码', desc: 'APE：最后一个没接的压缩格式（授权须先核实）', tag: '下一梯队' },
     { name: '变速不变调', desc: '0.5–2.0× 变速，音高不动（依赖自建解码链）', tag: '下一梯队' },
     { name: 'DSD 直读', desc: 'dsf / dff / ISO 解码与 DoP 输出提示', tag: 'Pro 2.0' }
   ];

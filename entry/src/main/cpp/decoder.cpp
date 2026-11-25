@@ -2,6 +2,7 @@
 #include "fmt_aiff.h"
 #include "fmt_wavpack.h"
 #include "fmt_alac.h"
+#include "fmt_ape.h"
 
 #include <cstdio>
 #include <cstring>
@@ -55,7 +56,7 @@ bool NativeHandlesSuffix(const std::string &suffix) {
     // .m4a 例外：容器里可能是 AAC（AVPlayer 能解）。路由走 native，
     // open 失败且原因带「mp4 容器非 ALAC」时由 PlayerCore 回退 AVPlayer。
     return suffix == ".aiff" || suffix == ".aif" || suffix == ".aifc" ||
-           suffix == ".wv" || suffix == ".m4a";
+           suffix == ".wv" || suffix == ".m4a" || suffix == ".ape";
 }
 
 AudioSource *CreateSource(const std::string &path, std::string *why) {
@@ -83,6 +84,12 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         return CreateWavpackSource(path);
     }
 
+    // APE 文件头 magic：'MAC '（正常文件）或 'MACF'（APL/Link 文件，
+    // 音频主体在外部——MACLib 会尝试解析，失败时给出错误码话术）
+    if (std::memcmp(head, "MAC ", 4) == 0 || std::memcmp(head, "MACF", 4) == 0) {
+        return CreateApeSource(path, why);
+    }
+
     if (std::memcmp(head, "ftyp", 4) == 0) {
         // m4a/mp4 容器：里面的编码不一定是 ALAC（AAC 也走这个容器）。
         // CreateAlacSource 对非 ALAC 会给出「mp4 容器非 ALAC」话术，上层据此回退 AVPlayer。
@@ -102,9 +109,12 @@ AudioSource *CreateSource(const std::string &path, std::string *why) {
         // 同上：magic 不是 ftyp（有些文件开头是 skip/free 盒）也交给容器解析器
         return CreateAlacSource(path, why);
     }
+    if (sfx == ".ape" || sfx == ".apl") {
+        // 同上：改错扩展名的文件由 APE 解析器给出具体原因
+        return CreateApeSource(path, why);
+    }
 
     // 已规划但解码器尚未接入，返回 nullptr 由上层给明确话术
-    //   MAC  → APE
     SetWhy(why, "没有匹配的解码器：magic=" + Hex4(head) + " 后缀=" + sfx);
     return nullptr;
 }

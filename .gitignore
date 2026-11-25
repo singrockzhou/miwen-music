@@ -43,3 +43,10 @@ layout.xml
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---- 验证素材工具（只入库脚本；素材与 DLL 可按 make_ape.py + 官方 SDK 重建）----
+tools/ape_material/*.wav
+tools/ape_material/*.ape
+tools/ape_material/*.dll
+tools/ape_material/*.log
+tools/layout.json

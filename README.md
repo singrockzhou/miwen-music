@@ -7,8 +7,8 @@
 - 兼容 / 目标：HarmonyOS 5.0.0 (API 12)
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.82 MB，已签名可直接 `hdc install`）
-- 代码规模：52 个 `.ets` 约 14,900 行 + `cpp/` 自研 9 文件约 1,890 行（另内嵌 libwavpack 5.8.1 与 Apple ALAC 源码）
-- 当前版本：v1.3.2（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC/WavPack/ALAC 已能真播——WavPack 内嵌官方 libwavpack 5.8.1（BSD-3），ALAC 内嵌 Apple 官方解码器（Apache-2.0），m4a 里的 AAC 自动回退系统解码；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
+- 代码规模：52 个 `.ets` 约 14,900 行 + `cpp/` 自研 10 文件约 2,070 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
+- 当前版本：v1.3.3（Pro 2.0 第一块：**自建解码链**，AIFF/AIFC/WavPack/ALAC/**APE** 已能真播——WavPack 内嵌官方 libwavpack 5.8.1（BSD-3），ALAC 内嵌 Apple 官方解码器（Apache-2.0），APE 内嵌 Monkey's Audio 官方 MACLib 13.50（3-Clause BSD），m4a 里的 AAC 自动回退系统解码；AVPlayer 解不了的格式改由 libmiwen.so 解 PCM 喂 AudioRenderer。1.2.2 修 CUE 虚拟轨歌词不按片头偏移）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -47,8 +47,10 @@ entry/src/main/
 │  ├─ fmt_aiff.cpp              AIFF / AIFC（PCM / sowt / fl32 / fl64）
 │  ├─ fmt_wavpack.cpp           WavPack（内嵌官方 libwavpack 5.8.1，BSD-3；seek 失败走重建+顺序解码）
 │  ├─ fmt_alac.cpp              ALAC（m4a/mp4 容器解析 + Apple 官方解码器，Apache-2.0；AAC 自动回退系统）
+│  ├─ fmt_ape.cpp               APE（Monkey's Audio 官方 MACLib 13.50，3-Clause BSD；官方快速 Seek）
 │  ├─ wavpack/                  libwavpack 源码 30 文件（去 DSD、去手写汇编，附原 COPYING）
 │  ├─ alac/                     Apple ALAC 解码源码 14 文件（EndianPortable 补 aarch64 小端判定，附原 LICENSE）
+│  ├─ ape/                      MACLib 源码（官方 CMake 库清单 + License.txt，arm64 走 NNFilterNeon）
 │  └─ types/libmiwen/           给 ArkTS 的 .d.ts 与 oh-package.json5
 ├─ ets/
 │  ├─ common/
@@ -221,7 +223,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
         ▼
    PlayerCore（单例）
    ├─ local 引擎：media.AVPlayer，一首一个实例，切歌先摘引用再 release
-   ├─ native 引擎：libmiwen.so 解 PCM → AudioRenderer.on('writeData')（v1.3.2，AIFF/AIFC/WavPack/ALAC）
+   ├─ native 引擎：libmiwen.so 解 PCM → AudioRenderer.on('writeData')（v1.3.3，AIFF/AIFC/WavPack/ALAC/APE）
    └─ demo 引擎：200ms 计时器推进度（示例曲库没有真实文件）
    ├─ AVSession：metadata + playbackState（起播前先置 BUFFERING）
    ├─ backgroundTaskManager：AUDIO_PLAYBACK 长时任务，与播放态成对申请/释放
@@ -239,7 +241,7 @@ UI（Home/Library/Collection/Player/MiniPlayer）
 - **示例引擎**是刻意的设计：没有真实音频也能验收播放/暂停/进度/上下曲/模式，换成真实曲库后自动走 AVPlayer。
 - **示例曲不申请长时任务**（`startBgTask` 里 `isDemo` 直接返回）：它没有 AVPlayer，占了后台权限也不会出声。实机日志可区分——真实播放是 `hasBackgroundTask:1, isFreeze:0`，示例是 `0 / 1`。
 
-### 4.1 自建解码链（v1.3.2）
+### 4.1 自建解码链（v1.3.3）
 
 系统解码器（AVCodec）解不了 APE / ALAC / WavPack / AIFF，所以这条链是"自己解、自己喂"：
 
@@ -254,7 +256,7 @@ Track → NativePlayer.open(path)
 
 几个刻意的取舍：
 
-- **统一输出交错 float32**：三种格式内部表示不同（AIFF 大端整型、WavPack 整型/浮点、ALAC 整型），统一到 float 之后 ArkTS 只认一种 `SAMPLE_FORMAT_F32LE`，不必每格式一条通道。
+- **统一输出交错 float32**：四种格式内部表示不同（AIFF 大端整型、WavPack 整型/浮点、ALAC/APE 整型），统一到 float 之后 ArkTS 只认一种 `SAMPLE_FORMAT_F32LE`，不必每格式一条通道。
 - **不做重采样**：素材采样率原样交给 AudioRenderer，不支持就报错。静默换成 48k 会变调——对发烧友来说变调比"播不了"更伤信任。
 - **`write()` 已废弃**（API 11 起），必须用 `on('writeData')` 回调，由系统按需索要数据；回调里直接 `stop()` 会和音频线程互等，收尾放到 `setTimeout(0)`。
 - **进度口径是"已写入帧数"**，比真实出声早约一个缓冲区（100~200ms），与 AVPlayer 侧观感一致。
@@ -275,7 +277,12 @@ Track → NativePlayer.open(path)
 - **内嵌 Apple 官方解码器**（Apache-2.0，随源附原 LICENSE）+ 自写 MP4 容器解析（stsd 的 magic cookie 直接喂 `ALACDecoder::Init`；stsz/stsc/stco 联合算出每帧字节位置）。`EndianPortable.c` 原版漏判 aarch64 已补。
 - **m4a 是容器不是格式**：AAC/MP3 也走 .m4a。native 打开发现不是 ALAC 就报「mp4 容器非 ALAC」，PlayerCore 据此自动回退 AVPlayer——AAC m4a 用户无感，ALAC m4a 走真解码。
 
-已知边界（v1.3.2）：已接 AIFF/AIFC/WavPack/ALAC；APE 待接（授权须先核实）；ALAC 多声道 >2 明确报暂不支持、CAF 容器未接、加密 m4a 未处理；曲库列表的 m4a 时长列暂显示 00:00（扫描侧不解析 mp4 标签，点播后以解码器为准）；WavPack 的 `.wvc`/hybrid 接线正确但未实测；DSD 编码的 `.wv` 明确报「暂不支持」；CUE 分轨暂不支持原生格式（时间片要裁 PCM）；采样率 8k–192k 之外不支持。
+**APE 专有的两个取舍**（v1.3.3，详见验证报告第十五节）：
+
+- **内嵌 Monkey's Audio 官方 MACLib 13.50**（3-Clause BSD，随源附原 License.txt，© 2000-2027 Matthew T. Ashland）：解码入口 `CreateIAPEDecompress`（`GetUTFNFromUTF8` 转 wchar 路径），按官方 CMake 库清单收源码——**Prepare / WAVInputSource / APECompressCreate 三个"看着像编码侧"的文件被解码路径引用符号，裁掉就链接失败**，实测必须保留；`All.h` 必须先于 `MACLib.h` 包含（`uint16/uint32/str_utfn` 别名都在里面）。arm64 自动走官方 `NNFilterNeon.cpp`。
+- **官方 `CAPEDecompress::Seek` 是真·快速定位**（按 `BLOCKS_PER_FRAME` 算目标帧直接跳），不像 ALAC 要重建顺序解码；APL/Link 文件（magic `MACF`）也接了，音频主体在外部时由 MACLib 报错误码。位深只接 8/16/24/32（文件头真实取值集合），其他位深明确报暂不支持。
+
+已知边界（v1.3.3）：已接 AIFF/AIFC/WavPack/ALAC/**APE**（Pro 2.0「全格式真解码」清单完成）；ALAC 多声道 >2 明确报暂不支持、CAF 容器未接、加密 m4a 未处理；曲库列表的 m4a 时长列暂显示 00:00（扫描侧不解析 mp4 标签，点播后以解码器为准）；WavPack 的 `.wvc`/hybrid 接线正确但未实测；DSD 编码的 `.wv` 明确报「暂不支持」；CUE 分轨暂不支持原生格式（时间片要裁 PCM）；采样率 8k–192k 之外不支持。
 
 ### 4.2 ArkUI 真机坑（2026-11-24 实机踩到）
 这些在编译期全绿、只有在设备上才暴露：
