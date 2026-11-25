@@ -41,7 +41,7 @@ struct ProPage {
 
   private readonly featNow: ProFeat[] = [
     { name: '直出模式', desc: '旁路系统音效，PCM 原样送到输出', tag: '已实装' },
-    { name: '主题包', desc: '黑胶 · 夜航 · 牛皮纸 · 高对比（无障碍）', tag: '已实装' },
+    { name: '主题包', desc: '磁带 · 黑胶 · 夜航 · 牛皮纸 · 高对比（无障碍）', tag: '已实装' },
     { name: '歌词增强', desc: '读文件内嵌歌词、双语双行、时间轴 ±0.5s 微调', tag: '已实装' },
     { name: 'M3U 与备份还原', desc: '歌单导入导出，索引与收藏备份成单个 zip', tag: '已实装' },
     { name: 'A-B 循环', desc: '任意两点反复听，学乐器扒谱用', tag: '已实装' },
@@ -59,18 +59,18 @@ struct ProPage {
     { name: 'DSD 直读', desc: 'dsf / dff 软解转 PCM（88.2k/176.4k），DST 压缩一并解', tag: '已实装' },
     { name: 'DST 解压', desc: 'DST 无损压缩（SACD 同款算术解码）的 DFF 直接播', tag: '已实装' },
     { name: 'SACD ISO 直读', desc: '按 LSN 直读镜像，展开成曲目列表播放；立体声区 / DST / 未压缩帧都支持', tag: '已实装' },
+    { name: '多声道 SACD 区', desc: '5/6 声道区解码入库；播放时 downmix 立体声输出（真机只有两个扬声器）', tag: '已实装' },
+    { name: 'ISO 标题编码', desc: 'ISO 内曲目标签按 UTF-16/UTF-8/Shift-JIS/GB2312 探测解码，不再按 Latin-1 收', tag: '已实装' },
+    { name: '封面回写', desc: '批量改标签时可选把封面写进文件本体（FLAC PICTURE / MP3 APIC），音频流不动', tag: '已实装' },
     { name: '文件标签回写', desc: '批量改的艺人/专辑可写进文件本体（FLAC Vorbis comment / MP3 ID3v2.3），音频流字节不动', tag: '已实装' },
     { name: '曲库维护', desc: '重复曲目检测清理、失效路径重新定位、按文件夹批量改索引标签', tag: '已实装' },
     { name: '睡眠定时进阶', desc: '到点 10 秒音量渐弱再暂停；另加「播完本专辑停」', tag: '已实装' }
   ];
 
   private readonly featNext: ProFeat[] = [
-    { name: '多声道 SACD 区', desc: '5/6 声道区的解码与多声道输出', tag: '下一梯队' }
   ];
 
   private readonly featLater: ProFeat[] = [
-    { name: 'SACD ISO 标题编码', desc: 'GB2312/Shift-JIS 等曲目标签字符集转换（当前按 Latin-1 收）', tag: '规划中' },
-    { name: '封面回写', desc: '把封面图写回 FLAC/MP3 文件本体', tag: '规划中' }
   ];
 
   private c(): Tokens {
@@ -319,19 +319,23 @@ struct ProPage {
               this.Divider()
             }, (f: ProFeat) => f.name)
 
-            this.SectionTitle('下个版本', 'NEXT RELEASE')
-            this.Divider()
-            ForEach(this.featNext, (f: ProFeat) => {
-              this.FeatRow(f, false)
+            if (this.featNext.length > 0) {
+              this.SectionTitle('下个版本', 'NEXT RELEASE')
               this.Divider()
-            }, (f: ProFeat) => f.name)
+              ForEach(this.featNext, (f: ProFeat) => {
+                this.FeatRow(f, false)
+                this.Divider()
+              }, (f: ProFeat) => f.name)
+            }
 
-            this.SectionTitle('规划中', 'ON THE BENCH')
-            this.Divider()
-            ForEach(this.featLater, (f: ProFeat) => {
-              this.FeatRow(f, false)
+            if (this.featLater.length > 0) {
+              this.SectionTitle('规划中', 'ON THE BENCH')
               this.Divider()
-            }, (f: ProFeat) => f.name)
+              ForEach(this.featLater, (f: ProFeat) => {
+                this.FeatRow(f, false)
+                this.Divider()
+              }, (f: ProFeat) => f.name)
+            }
 
             // ---- 价格 ----
             this.SectionTitle('价格', 'PRICE')

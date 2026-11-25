@@ -108,8 +108,10 @@ export class NativePlayer {
       Logger.warn(TAG, `setRate on open failed ${JSON.stringify(e)}`);
     }
 
-    if (this.channels < 1 || this.channels > 2) {
-      this.lastError = `暂不支持 ${this.channels} 声道（当前支持单声道与立体声）`;
+    // 多声道（3–6）：v1.7.0 起支持解码，输出层 downmix 立体声（真机只有两个扬声器）。
+    // renderer 通道恒为 1/2，fill() 里按源声道读取后混音。
+    if (this.channels < 1 || this.channels > 6) {
+      this.lastError = `暂不支持 ${this.channels} 声道（支持 1–6）`;
       this.release();
       return false;
     }
@@ -252,8 +254,7 @@ export class NativePlayer {
     const opts: audio.AudioRendererOptions = {
       streamInfo: {
         samplingRate: this.sampleRate,
-        channels: this.channels === 1 ? audio.AudioChannel.CHANNEL_1 : audio.AudioChannel.CHANNEL_2,
-        sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_F32LE,
+        channels: this.channels === 1 ? audio.AudioChannel.CHANNEL_1 : audio.AudioChannel.CHANNEL_2,        sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_F32LE,
         encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
       },
       rendererInfo: {
@@ -270,7 +271,8 @@ export class NativePlayer {
           this.onInterrupt(event);
         }
       });
-      Logger.info(TAG, `renderer built ${this.sampleRate}Hz ${this.channels}ch f32le`);
+      Logger.info(TAG, `renderer built ${this.sampleRate}Hz ${this.channels}ch` +
+        (this.channels > 2 ? '(→2 downmix)' : '') + ' f32le');
       if (this.direct) {
         await this.applyDirect();
       }
@@ -309,15 +311,16 @@ export class NativePlayer {
       return audio.AudioDataCallbackResult.VALID;
     }
 
-    const bytesPerFrame: number = 4 * this.channels;
-    const wantFrames: number = Math.floor(data.byteLength / bytesPerFrame);
-    if (wantFrames <= 0) {
+    // 输出通道恒 1/2；源是 3–6 声道时按源声道解码，写入前 downmix（v1.7.0）
+    const outCh: number = this.channels > 2 ? 2 : this.channels;
+    const outFrames: number = Math.floor(data.byteLength / (4 * outCh));
+    if (outFrames <= 0) {
       return audio.AudioDataCallbackResult.INVALID;
     }
 
     let src: ArrayBuffer | null = null;
     try {
-      src = decRead(this.id, wantFrames);
+      src = decRead(this.id, outFrames);
     } catch (e) {
       Logger.warn(TAG, `read failed ${JSON.stringify(e)}`);
       src = null;
@@ -340,11 +343,44 @@ export class NativePlayer {
 
     const got: Float32Array = new Float32Array(src);
     const gotFrames: number = Math.floor(got.length / this.channels);
+    if (this.channels > 2) {
+      // N→2 downmix：ch0=L 基底、ch1=R 基底，其余声道 0.5 幅度同混入两侧（布局未知时的保守混法）
+      const n: number = Math.min(gotFrames, outFrames);
+      for (let f = 0; f < n; f++) {
+        const base: number = f * this.channels;
+        let l: number = got[base];
+        let r: number = got[base + 1];
+        for (let c = 2; c < this.channels; c++) {
+          l += got[base + c] * 0.5;
+          r += got[base + c] * 0.5;
+        }
+        dst[f * 2] = Math.max(-1, Math.min(1, l));
+        dst[f * 2 + 1] = Math.max(-1, Math.min(1, r));
+      }
+      if (gotFrames < outFrames) {
+        dst.fill(0, gotFrames * 2);
+      }
+      this.writtenFrames += gotFrames;
+      this.srcFrames += gotFrames * this.rate;
+      this.trackLevel(new Float32Array(dst.subarray(0, n * 2)));
+      if (gotFrames < outFrames) {
+        if (!this.ended) {
+          this.ended = true;
+          setTimeout(() => {
+            if (this.onEnded !== null) {
+              this.onEnded();
+            }
+          }, 0);
+        }
+      }
+      return audio.AudioDataCallbackResult.VALID;
+    }
+
     dst.set(got, 0);
     this.writtenFrames += gotFrames;
     this.srcFrames += gotFrames * this.rate;
     this.trackLevel(got);
-    if (gotFrames < wantFrames) {
+    if (gotFrames < outFrames) {
       dst.fill(0, got.length);
       if (!this.ended) {
         this.ended = true;

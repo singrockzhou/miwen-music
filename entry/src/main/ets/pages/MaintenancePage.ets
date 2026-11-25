@@ -52,6 +52,8 @@ struct MaintenancePage {
   @State inAlbum: string = '';
   /** 批量改标签时是否同时回写文件本体（v1.5.0） */
   @State writeBack: boolean = false;
+  /** v1.7.0：同时把封面缓存写回文件本体（FLAC PICTURE / MP3 APIC） */
+  @State writeCover: boolean = false;
 
   private ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
 
@@ -225,7 +227,9 @@ struct MaintenancePage {
               artist: this.inArtist,
               album: this.inAlbum
             });
-            const why: string = decWriteTags(t.path, payload);
+            // v1.7.0：勾了「回写封面」且有缓存封面时带第三参（native 按文件头识别 JPEG/PNG）
+            const cv: string = this.writeCover && t.coverPath.length > 0 ? t.coverPath : '';
+            const why: string = cv.length > 0 ? decWriteTags(t.path, payload, cv) : decWriteTags(t.path, payload);
             if (why.length === 0) {
               ok++;
             } else {
@@ -438,8 +442,24 @@ struct MaintenancePage {
               }
               .width('100%')
               .margin({ top: 10 })
+              Row() {
+                Text('同时回写封面（FLAC/MP3）')
+                  .fontSize(12).fontColor(this.c().text)
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Checkbox, isOn: this.writeCover })
+                  .selectedColor(this.c().accent)
+                  .onChange((on: boolean) => {
+                    this.writeCover = on;
+                  })
+              }
+              .width('100%')
+              .margin({ top: 10 })
               if (this.writeBack) {
                 Text('回写直接修改音频文件本体（FLAC = Vorbis comment，MP3 = ID3v2.3），其他格式自动跳过并计数。')
+                  .fontSize(10).fontColor(this.c().faint).margin({ top: 6 })
+              }
+              if (this.writeCover) {
+                Text('封面回写会把曲库缓存里的封面图写进文件本体（FLAC = PICTURE，MP3 = APIC）；没有缓存的曲目自动跳过封面。')
                   .fontSize(10).fontColor(this.c().faint).margin({ top: 6 })
               }
               this.PrimaryBtn(this.busy ? this.step : '应用到所选文件夹', (): void => {

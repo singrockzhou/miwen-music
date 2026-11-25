@@ -16,7 +16,11 @@
  * tagsJson 约定（flat JSON，值全部按字符串收，数字也行）：
  *   {"title":"..","artist":"..","album":"..","albumartist":"..","genre":"..","date":"..","track":".."}
  * 缺 key = 不写该帧；整包空 = 不产生任何帧（返回错误，上层不会走到这）。
+ *
+ * coverPath（v1.7.0）：非空时把该图片写进文件本体封面（FLAC=PICTURE 块 type 6 整体替换/追加，
+ * MP3=ID3v2.3 APIC 帧整体重建）。支持 JPEG/PNG（按文件头识别 mime）。音频流依旧一个字节不动。
  */
-int WriteAudioTags(const std::string &path, const std::string &tagsJson, char *err, size_t errLen);
+int WriteAudioTags(const std::string &path, const std::string &tagsJson,
+                   const std::string &coverPath, char *err, size_t errLen);
 
 #endif // MIWEN_FMT_TAG_H

@@ -353,20 +353,22 @@ napi_value OpenSacdTrack(napi_env env, napi_callback_info cb) {
     return MakeInfo(env, true, info, id, nullptr);
 }
 
-/** writeTags(path, tagsJson)：把标签写回音频文件本体（FLAC=Vorbis comment，MP3=ID3v2.3）。
- *  返回 0 成功；非 0 失败，errOut 带原因。 */
+/** writeTags(path, tagsJson, coverPath?)：把标签（及可选封面）写回音频文件本体。
+ *  FLAC=Vorbis comment + PICTURE；MP3=ID3v2.3 + APIC。coverPath 空 = 不动封面。
+ *  返回 err 字符串（空 = 成功）。 */
 napi_value WriteTags(napi_env env, napi_callback_info cb) {
-    size_t argc = 2;
-    napi_value args[2] = {nullptr, nullptr};
+    size_t argc = 3;
+    napi_value args[3] = {nullptr, nullptr, nullptr};
     napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
 
     const std::string path = GetString(env, args[0]);
     const std::string tagsJson = GetString(env, args[1]);
+    const std::string coverPath = argc >= 3 ? GetString(env, args[2]) : "";
 
     char err[256] = {0};
     const int rc = path.empty() || tagsJson.empty()
         ? -1
-        : WriteAudioTags(path, tagsJson, err, sizeof(err));
+        : WriteAudioTags(path, tagsJson, coverPath, err, sizeof(err));
     if (rc != 0 && err[0] == '\0') {
         std::snprintf(err, sizeof(err), "标签回写失败（未知原因）");
     }

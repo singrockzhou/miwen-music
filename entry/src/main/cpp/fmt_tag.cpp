@@ -246,7 +246,50 @@ std::vector<uint8_t> BuildVorbisComment(const std::map<std::string, std::string>
     return b;
 }
 
+// ---------------- 封面（v1.7.0：FLAC PICTURE / MP3 APIC） ----------------
+
+/** 读封面文件并按文件头识别 mime。返回 false 时 why 带原因 */
+bool LoadCover(const std::string &path, std::vector<uint8_t> &data, std::string &mime,
+               char *err, size_t errLen) {
+    if (!ReadAll(path, data, err, errLen)) {
+        return false;
+    }
+    if (data.size() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+        mime = "image/jpeg";
+        return true;
+    }
+    if (data.size() >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) {
+        mime = "image/png";
+        return true;
+    }
+    SetErr(err, errLen, "封面文件不是 JPEG/PNG（按文件头识别）");
+    return false;
+}
+
+/** FLAC PICTURE 块内容（大端）：type3=front cover + mime + 空 desc + 尺寸 0 + data */
+std::vector<uint8_t> BuildFlacPicture(const std::string &mime, const std::vector<uint8_t> &img) {
+    std::vector<uint8_t> b;
+    auto put32 = [&](uint32_t v) {
+        b.push_back((uint8_t) ((v >> 24) & 0xFF));
+        b.push_back((uint8_t) ((v >> 16) & 0xFF));
+        b.push_back((uint8_t) ((v >> 8) & 0xFF));
+        b.push_back((uint8_t) (v & 0xFF));
+    };
+    put32(3);  // picture type: front cover
+    put32((uint32_t) mime.size());
+    b.insert(b.end(), mime.begin(), mime.end());
+    put32(0);  // description 空
+    put32(0);  // width 未知
+    put32(0);  // height
+    put32(0);  // depth
+    put32(0);  // colors
+    put32((uint32_t) img.size());
+    b.insert(b.end(), img.begin(), img.end());
+    return b;
+}
+
 bool WriteFlacTags(const std::string &path, const std::map<std::string, std::string> &tags,
+                   const std::vector<uint8_t> &cover, const std::string &coverMime,
                    char *err, size_t errLen) {
     std::vector<uint8_t> data;
     if (!ReadAll(path, data, err, errLen)) {
@@ -262,6 +305,7 @@ bool WriteFlacTags(const std::string &path, const std::map<std::string, std::str
     meta.insert(meta.end(), data.begin(), data.begin() + 4);
     size_t audioStart = data.size();
     bool replaced = false;
+    bool picReplaced = false;
     while (pos + 4 <= data.size()) {
         const uint8_t h = data[pos];
         const bool last = (h & 0x80) != 0;
@@ -281,6 +325,16 @@ bool WriteFlacTags(const std::string &path, const std::map<std::string, std::str
             meta.push_back((uint8_t) (nsize & 0xFF));
             meta.insert(meta.end(), vc.begin(), vc.end());
             replaced = true;
+        } else if (type == 6 && !cover.empty()) {
+            // 已有封面：整体替换成新 PICTURE
+            const std::vector<uint8_t> pic = BuildFlacPicture(coverMime, cover);
+            const uint32_t nsize = (uint32_t) pic.size();
+            meta.push_back((uint8_t) (0x00 | 0x06));
+            meta.push_back((uint8_t) ((nsize >> 16) & 0xFF));
+            meta.push_back((uint8_t) ((nsize >> 8) & 0xFF));
+            meta.push_back((uint8_t) (nsize & 0xFF));
+            meta.insert(meta.end(), pic.begin(), pic.end());
+            picReplaced = true;
         } else {
             meta.push_back(h & 0x7F);  // last 标志清零，写出时统一补
             meta.push_back(data[pos + 1]);
@@ -307,6 +361,15 @@ bool WriteFlacTags(const std::string &path, const std::map<std::string, std::str
         meta.push_back((uint8_t) (nsize & 0xFF));
         meta.insert(meta.end(), vc.begin(), vc.end());
     }
+    if (!cover.empty() && !picReplaced) {
+        // 原文件没有 PICTURE 块：在最后追加
+        const std::vector<uint8_t> pic = BuildFlacPicture(coverMime, cover);
+        const uint32_t nsize = (uint32_t) pic.size();
+        meta.push_back((uint8_t) ((nsize >> 16) & 0xFF));
+        meta.push_back((uint8_t) ((nsize >> 8) & 0xFF));
+        meta.push_back((uint8_t) (nsize & 0xFF));
+        meta.insert(meta.end(), pic.begin(), pic.end());
+    }
     // 最后一个 metadata 块补 last 标志：从 4 开始，每块 (头4 + size)
     {
         size_t p = 4;
@@ -331,7 +394,8 @@ uint32_t Syncsafe(const uint8_t *p) {
         | ((uint32_t) (p[2] & 0x7F) << 7) | (uint32_t) (p[3] & 0x7F);
 }
 
-std::vector<uint8_t> BuildId3v23(const std::map<std::string, std::string> &tags) {
+std::vector<uint8_t> BuildId3v23(const std::map<std::string, std::string> &tags,
+                                 const std::vector<uint8_t> &cover, const std::string &coverMime) {
     // v2.3 文本帧：encoding 0x01 = UTF-16 带 BOM（中文安全）；帧 size 是普通 BE（v2.3 非 syncsafe）
     auto utf16 = [](const std::string &s) {
         std::vector<uint8_t> b;
@@ -407,6 +471,26 @@ std::vector<uint8_t> BuildId3v23(const std::map<std::string, std::string> &tags)
         body.push_back(0x01);  // encoding: UTF-16 w/ BOM
         body.insert(body.end(), content.begin(), content.end());
     }
+    if (!cover.empty()) {
+        // APIC（v2.3）：encoding(Latin-1) + mime NUL + pic type + desc(NUL) + data
+        // mime 与 description 用 Latin-1（0x00），图片字节原样
+        std::vector<uint8_t> content;
+        content.push_back(0x00);  // encoding: Latin-1（只用于 mime/desc 文本）
+        content.insert(content.end(), coverMime.begin(), coverMime.end());
+        content.push_back(0x00);
+        content.push_back(0x03);  // picture type: front cover
+        content.push_back(0x00);  // 空 description 的终止符
+        content.insert(content.end(), cover.begin(), cover.end());
+        const uint32_t fsz = (uint32_t) content.size();
+        body.insert(body.end(), "APIC", "APIC" + 4);
+        body.push_back((uint8_t) ((fsz >> 24) & 0xFF));
+        body.push_back((uint8_t) ((fsz >> 16) & 0xFF));
+        body.push_back((uint8_t) ((fsz >> 8) & 0xFF));
+        body.push_back((uint8_t) (fsz & 0xFF));
+        body.push_back(0x00);
+        body.push_back(0x00);  // flags
+        body.insert(body.end(), content.begin(), content.end());
+    }
     if (body.empty()) {
         return {};
     }
@@ -428,6 +512,7 @@ std::vector<uint8_t> BuildId3v23(const std::map<std::string, std::string> &tags)
 }
 
 bool WriteMp3Tags(const std::string &path, const std::map<std::string, std::string> &tags,
+                  const std::vector<uint8_t> &cover, const std::string &coverMime,
                   char *err, size_t errLen) {
     std::vector<uint8_t> data;
     if (!ReadAll(path, data, err, errLen)) {
@@ -452,7 +537,7 @@ bool WriteMp3Tags(const std::string &path, const std::map<std::string, std::stri
         SetErr(err, errLen, "不是 MP3 文件（没有 ID3v2 头也没有 MPEG 帧同步）");
         return false;
     }
-    const std::vector<uint8_t> tag = BuildId3v23(tags);
+    const std::vector<uint8_t> tag = BuildId3v23(tags, cover, coverMime);
     if (tag.empty()) {
         SetErr(err, errLen, "没有可写入的标签字段");
         return false;
@@ -464,7 +549,8 @@ bool WriteMp3Tags(const std::string &path, const std::map<std::string, std::stri
 
 }  // namespace
 
-int WriteAudioTags(const std::string &path, const std::string &tagsJson, char *err, size_t errLen) {
+int WriteAudioTags(const std::string &path, const std::string &tagsJson,
+                   const std::string &coverPath, char *err, size_t errLen) {
     std::map<std::string, std::string> tags;
     if (!ParseFlatJson(tagsJson, tags)) {
         SetErr(err, errLen, "标签数据解析失败");
@@ -475,6 +561,16 @@ int WriteAudioTags(const std::string &path, const std::string &tagsJson, char *e
         if (!kv.second.empty()) {
             any = true;
         }
+    }
+
+    // 封面（可选）：非空路径时读文件并按头识别 mime
+    std::vector<uint8_t> cover;
+    std::string coverMime;
+    if (!coverPath.empty()) {
+        if (!LoadCover(coverPath, cover, coverMime, err, errLen)) {
+            return -5;
+        }
+        any = true;
     }
     if (!any) {
         SetErr(err, errLen, "没有要写入的标签字段");
@@ -497,10 +593,10 @@ int WriteAudioTags(const std::string &path, const std::string &tagsJson, char *e
     }
 
     if (std::memcmp(head.data(), "fLaC", 4) == 0) {
-        return WriteFlacTags(path, tags, err, errLen) ? 0 : -10;
+        return WriteFlacTags(path, tags, cover, coverMime, err, errLen) ? 0 : -10;
     }
     if (std::memcmp(head.data(), "ID3", 3) == 0 || (head[0] == 0xFF && (head[1] & 0xE0) == 0xE0)) {
-        return WriteMp3Tags(path, tags, err, errLen) ? 0 : -10;
+        return WriteMp3Tags(path, tags, cover, coverMime, err, errLen) ? 0 : -10;
     }
     SetErr(err, errLen, "该格式暂不支持标签回写（当前支持 FLAC / MP3）");
     return -20;

@@ -57,4 +57,4 @@ export const openSacdTrack: (path: string, trackIndex: number) => DecodedInfo;
  * tagsJson: {"title":"..","artist":"..","album":"..","albumartist":"..","genre":"..","date":"..","track":".."}
  * 返回空串 = 成功；非空 = 错误原因（可直接展示）。
  */
-export const writeTags: (path: string, tagsJson: string) => string;
+export const writeTags: (path: string, tagsJson: string, coverPath?: string) => string;

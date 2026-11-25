@@ -8,7 +8,7 @@
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.82 MB，已签名可直接 `hdc install`）
 - 代码规模：54 个 `.ets` 约 16,000 行 + `cpp/` 自研 22 文件约 5,500 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
-- 当前版本：v1.6.0（第三梯队收官：**年度听歌报告 + 自定义强调色**——统计页加年份切换 / 12 月柱状图 / 年度 TOP5，随长图导出；设置页可从封套八色钉住全局强调色，派生 accent 系四色，切主题与重启均保持。v1.5.0 已含 DST 解压、SACD ISO 直读、文件标签回写；v1.4.0 已含变速不变调(WSOLA)、DSF/DFF 软解、曲库维护页、睡眠定时渐弱）
+- 当前版本：v1.7.0（**多声道 SACD 区 + ISO 标题编码 + 封面回写 + 磁带主题挪进 Pro**——5/6 声道区解码、输出层 downmix 立体声；ISO 内曲目标签按 UTF-16/UTF-8/Shift-JIS/GB2312 探测解码（自生成码表，Latin-1 兜底）；批量改标签可选把封面写进文件本体（FLAC PICTURE / MP3 APIC）；免费主题收敛为暗夜+白纸，磁带划入 Pro 与规划切法表对齐。v1.6.0 已含年度听歌报告 + 自定义强调色；v1.5.0 已含 DST 解压、SACD ISO 直读、文件标签回写）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -448,6 +448,12 @@ Track → NativePlayer.open(path)
 ### 9.10 v1.6.0 第三梯队收官（年度报告 / 强调色）✅ 2026-11-25 真机验证
 - [x] 年度听歌报告：统计页出现「年度报告」区（YEARLY REPORT），年份 chip「2026」，四格（808 次 / 1 小时 42 分 / 36 首 / 2 天）与 12 月柱状图（仅 11 月非零，与记录自 2026.11.24 一致）、年度 TOP5（第二轨 145 次起）完整渲染；「存成长图」走系统保存对话框存入 Download，photoAccessHelper 媒体库写入日志确认（shell 域无权读用户 Download、图库有应用锁，文件内容未直接回读——保留此边界记录）
 - [x] 自定义强调色：设置→外观→强调色出现八色板 + 跟随主题；钉住封套蓝紫后全 App 即时变色（设置 tab 下划线、分区标题、播放条箭头、主题选中圆点、年度 chip 与柱状图均换色，色板选中块加粗白边框）；切到白纸浅色主题后钉住色保持且无文字不可读；force-stop 重启后仍「已钉住」；Pro 已解锁用户钉住直接放行不扣试用次数
+
+### 9.11 v1.7.0（多声道 SACD 区 / ISO 标题编码 / 封面回写 / 磁带 Pro 化）✅ 2026-11-25 真机验证
+- [x] 多声道 SACD 区：`sacd-mch-test.iso`（只有 MULCHTOC 多声道区、5 声道、未压缩帧）扫描入库 1 首，点播日志 `opened SACD-ISO(5ch)(DSD)→PCM(软解) 88200Hz 5ch 1bit 6000ms` + `renderer built 88200Hz 5ch(→2 downmix) f32le`；播放 `rms=0.475 @2043ms`、`rms=0.466 @4086ms`，6 秒播完 `native eof -> advance` 自动接续。DFF 多声道上限同步放宽到 1–6（与 DSF 对齐）；真机仅双扬声器，多声道以 downmix 输出（规划口径如实）
+- [x] ISO 标题编码：同一素材里专辑名 `サウンドテスト`（Shift-JIS）、曲名 `多声道测试曲`（GB2312）双双正确解码显示（Latin-1 路径下必乱码）；旧立体声 ISO `Miwen Track A / Miwen SACD Test`（ASCII）不受影响。码表由 `tools/dsd_material/gen_charset_tables.py` 自 Python codecs 生成（SJIS 7336 项 + GB2312 7445 项，运行时二分）
+- [x] 封面回写：内嵌 PNG 封面的 FLAC/MP3 重扫后走维护页「批量改标签 + 回写文件 + 回写封面」→ 拉回独立解析：FLAC 块序 STREAMINFO+VORBIS_COMMENT+**PICTURE(type3/image/png/177B)**+PADDING、MP3 **APIC(image/png/type3)**；ARTIST/TPE1 同步回写正确；**STREAMINFO md5 不变、音频区与 v1.5.0 基线逐字节一致**。无缓存封面的曲目自动跳过封面（第一轮实测）
+- [x] 磁带主题挪进 Pro：`Theme.FREE` 收敛为暗夜+白纸；设置页文案「后五套为密纹 Pro 主题」；已解锁设备切换磁带成功（全页拟物配色）。未购拦截走与黑胶等四套完全相同的 `Theme.isPro` 门禁 + 启动回退路径（该路径 v1.1 已真机验证；未购设备单独场景未复测，如实标注）
 
 ---
 

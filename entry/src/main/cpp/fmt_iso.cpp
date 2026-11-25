@@ -3,6 +3,7 @@
 #include "decoder.h"
 #include "dsd_feed.h"
 #include "fmt_dst.h"
+#include "types/charset_tables.h"
 
 #include <cstdio>
 #include <cstring>
@@ -56,12 +57,215 @@ bool ReadSectors(FILE *f, int64_t lsn, int64_t count, std::vector<uint8_t> &buf)
     return std::fread(buf.data(), 1, buf.size(), f) == buf.size();
 }
 
-std::string CleanText(const uint8_t *p, size_t maxLen) {
-    // ISO8859-1/UTF-8 文本按字节收，截到 NUL；控制字节压成空格（sacd-ripper 同款处理）
-    std::string out;
+// ---------------- 文本解码（v1.7.0：UTF-16/UTF-8/Shift-JIS/GB2312 探测，Latin-1 兜底） ----------------
+
+void AppendUtf8(std::string &out, uint32_t cp) {
+    if (cp < 0x80) {
+        out.push_back((char) cp);
+    } else if (cp < 0x800) {
+        out.push_back((char) (0xC0 | (cp >> 6)));
+        out.push_back((char) (0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        out.push_back((char) (0xE0 | (cp >> 12)));
+        out.push_back((char) (0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char) (0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back((char) (0xF0 | (cp >> 18)));
+        out.push_back((char) (0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back((char) (0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char) (0x80 | (cp & 0x3F)));
+    }
+}
+
+/** {码位, 码点} 升序表二分。查不到返回 0 */
+uint32_t LookupPair(const uint16_t *tbl, int n, uint16_t code) {
+    int lo = 0;
+    int hi = n - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        const uint16_t c = tbl[mid * 2];
+        if (c == code) {
+            return tbl[mid * 2 + 1];
+        }
+        if (c < code) {
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return 0;
+}
+
+/** 合法 UTF-8 校验（含过短编码与代理区检查）；hasMulti 带出是否含多字节序列 */
+bool ValidUtf8(const std::string &raw, bool *hasMulti) {
+    *hasMulti = false;
+    size_t i = 0;
+    while (i < raw.size()) {
+        const uint8_t c = (uint8_t) raw[i];
+        if (c < 0x80) {
+            i++;
+            continue;
+        }
+        int n = 0;
+        uint32_t cp = 0;
+        if ((c & 0xE0) == 0xC0) {
+            n = 1;
+            cp = c & 0x1F;
+        } else if ((c & 0xF0) == 0xE0) {
+            n = 2;
+            cp = c & 0x0F;
+        } else if ((c & 0xF8) == 0xF0) {
+            n = 3;
+            cp = c & 0x07;
+        } else {
+            return false;
+        }
+        if (i + n >= raw.size()) {
+            return false;
+        }
+        for (int k = 1; k <= n; k++) {
+            const uint8_t cc = (uint8_t) raw[i + k];
+            if ((cc & 0xC0) != 0x80) {
+                return false;
+            }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        if ((n == 1 && cp < 0x80) || (n == 2 && cp < 0x800) || (n == 3 && cp < 0x10000)) {
+            return false;
+        }
+        if (cp >= 0xD800 && cp <= 0xDFFF) {
+            return false;
+        }
+        *hasMulti = true;
+        i += (size_t) n + 1;
+    }
+    return true;
+}
+
+/** Shift-JIS 严格解码：非法序列即失败；必须含 ≥1 双字节才接受（避免把 GB 汉字区吃成半角假名） */
+bool TrySjis(const std::string &raw, std::string *out) {
+    out->clear();
+    bool multi = false;
+    size_t i = 0;
+    while (i < raw.size()) {
+        const uint8_t c = (uint8_t) raw[i];
+        if (c < 0x80) {
+            AppendUtf8(*out, c);
+            i++;
+            continue;
+        }
+        if (c >= 0xA1 && c <= 0xDF) {  // 半角片假名（单字节）
+            AppendUtf8(*out, 0xFF61 + (c - 0xA1));
+            i++;
+            continue;
+        }
+        if ((c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xEF)) {
+            if (i + 1 >= raw.size()) {
+                return false;
+            }
+            const uint8_t t = (uint8_t) raw[i + 1];
+            if (t < 0x40 || t > 0xFC || t == 0x7F) {
+                return false;
+            }
+            const uint32_t cp = LookupPair(kSjisPairs, kSjisPairs_N, (uint16_t) ((c << 8) | t));
+            if (cp == 0) {
+                return false;
+            }
+            AppendUtf8(*out, cp);
+            multi = true;
+            i += 2;
+            continue;
+        }
+        return false;  // 0x80/0xA0/0xF0-0xFC：本表覆盖范围外，判非法
+    }
+    return multi;
+}
+
+/** GB2312 严格解码：lead 0xA1-0xF7、trail 0xA1-0xFE；必须含 ≥1 双字节 */
+bool TryGb2312(const std::string &raw, std::string *out) {
+    out->clear();
+    bool multi = false;
+    size_t i = 0;
+    while (i < raw.size()) {
+        const uint8_t c = (uint8_t) raw[i];
+        if (c < 0x80) {
+            AppendUtf8(*out, c);
+            i++;
+            continue;
+        }
+        if (c < 0xA1 || c > 0xF7) {
+            return false;
+        }
+        if (i + 1 >= raw.size()) {
+            return false;
+        }
+        const uint8_t t = (uint8_t) raw[i + 1];
+        if (t < 0xA1 || t > 0xFE) {
+            return false;
+        }
+        const uint32_t cp = LookupPair(kGbkPairs, kGbkPairs_N, (uint16_t) ((c << 8) | t));
+        if (cp == 0) {
+            return false;
+        }
+        AppendUtf8(*out, cp);
+        multi = true;
+        i += 2;
+    }
+    return multi;
+}
+
+/**
+ * ISO 内文本统一入口。探测顺序：
+ * UTF-16LE BOM > 纯 ASCII > 合法 UTF-8(含多字节) > Shift-JIS(严格) > GB2312(严格) > Latin-1 逐字节。
+ * Latin-1 兜底与 v1.5.0 行为一致（0x80-0xFF 直接转 Unicode 同码点）。
+ */
+std::string DecodeIsoText(const uint8_t *p, size_t maxLen) {
+    std::string raw;
     for (size_t i = 0; i < maxLen && p[i] != 0; i++) {
         const uint8_t c = p[i];
-        out.push_back(c < 0x20 && c != 0 ? (uint8_t) ' ' : c);
+        raw.push_back(c < 0x20 ? (uint8_t) ' ' : c);
+    }
+    if (raw.empty()) {
+        return raw;
+    }
+    // UTF-16LE BOM
+    if ((uint8_t) raw[0] == 0xFF && raw.size() >= 2 && (uint8_t) raw[1] == 0xFE) {
+        std::string out;
+        for (size_t i = 2; i + 1 < raw.size(); i += 2) {
+            const uint16_t w = (uint16_t) ((uint8_t) raw[i] | ((uint16_t) (uint8_t) raw[i + 1] << 8));
+            if (w == 0) {
+                break;
+            }
+            AppendUtf8(out, w);
+        }
+        if (!out.empty()) {
+            return out;
+        }
+    }
+    bool allAscii = true;
+    for (size_t i = 0; i < raw.size(); i++) {
+        if ((uint8_t) raw[i] >= 0x80) {
+            allAscii = false;
+            break;
+        }
+    }
+    if (allAscii) {
+        return raw;
+    }
+    bool multi = false;
+    if (ValidUtf8(raw, &multi) && multi) {
+        return raw;
+    }
+    std::string out;
+    if (TrySjis(raw, &out)) {
+        return out;
+    }
+    if (TryGb2312(raw, &out)) {
+        return out;
+    }
+    out.clear();
+    for (size_t i = 0; i < raw.size(); i++) {
+        AppendUtf8(out, (uint8_t) raw[i]);
     }
     return out;
 }
@@ -86,10 +290,10 @@ bool ParseMasterToc(FILE *f, MasterToc &mt, std::string *why) {
         const uint16_t titlePos = Rd16BE(txt + 16);
         const uint16_t artistPos = Rd16BE(txt + 18);
         if (titlePos > 0 && titlePos < kLsn) {
-            mt.album = CleanText(txt + titlePos, 200);
+            mt.album = DecodeIsoText(txt + titlePos, 200);
         }
         if (artistPos > 0 && artistPos < kLsn) {
-            mt.artist = CleanText(txt + artistPos, 200);
+            mt.artist = DecodeIsoText(txt + artistPos, 200);
         }
     }
     if (mt.area1Start <= 0 && mt.area2Start <= 0) {
@@ -188,9 +392,9 @@ bool ParseAreaToc(FILE *f, int64_t startLsn, int64_t sizeSectors, AreaToc &at,
                 const uint8_t type = tp[0];
                 tp += 2;  // type + 0x20 填充
                 if (tp[0] != 0) {
-                    if (type == 0x01) {  // TRACK_TYPE_TITLE
-                        tracks[(size_t) i].title = CleanText(tp, 256);
-                    }
+                if (type == 0x01) {  // TRACK_TYPE_TITLE
+                    tracks[(size_t) i].title = DecodeIsoText(tp, 256);
+                }
                     while (tp[0] != 0) {
                         tp++;
                     }
@@ -428,27 +632,36 @@ SacdIsoInfo ParseSacdIso(const std::string &path) {
         info.error = why;
         return info;
     }
-    // 优先立体声区；只有多声道区时如实报不支持
+    // 优先立体声区；没有立体声区时解多声道区（v1.7.0 起支持，输出层 downmix 立体声）
     int64_t areaLsn = 0;
     int64_t areaSize = 0;
-    if (mt.area1Start > 0) {
+    if (mt.area1Start > 0 && mt.area1Size > 0) {
         areaLsn = mt.area1Start;
         areaSize = mt.area1Size;
+    } else if (mt.area2Start > 0 && mt.area2Size > 0) {
+        areaLsn = mt.area2Start;
+        areaSize = mt.area2Size;
     } else {
         std::fclose(f);
-        info.error = "这张 SACD 只有立体声区才支持，当前只有多声道区（暂不支持）";
+        info.error = "SACD ISO 里没有可读的音频区（立体声区与多声道区均缺 TOC）";
         return info;
     }
     AreaToc at;
     std::vector<SacdIsoTrack> tracks;
     if (!ParseAreaToc(f, areaLsn, areaSize, at, tracks, &why)) {
-        std::fclose(f);
-        info.error = why;
-        return info;
+        // 立体声区解析失败时再试多声道区（如盘面 stereo TOC 损坏）
+        if (areaLsn == mt.area1Start && mt.area2Start > 0 && mt.area2Size > 0
+            && ParseAreaToc(f, mt.area2Start, mt.area2Size, at, tracks, &why)) {
+            areaLsn = mt.area2Start;
+        } else {
+            std::fclose(f);
+            info.error = why;
+            return info;
+        }
     }
     std::fclose(f);
-    if (at.channelCount != 2 || at.loudspeakerConfig != 0) {
-        info.error = "暂不支持 " + std::to_string(at.channelCount) + " 声道的 SACD 区";
+    if (at.channelCount < 1 || at.channelCount > 6) {
+        info.error = "暂不支持 " + std::to_string(at.channelCount) + " 声道的 SACD 区（支持 1–6）";
         return info;
     }
     info.ok = true;
@@ -484,7 +697,8 @@ AudioSource *CreateSacdIsoSource(const std::string &path, int trackIndex, std::s
             info_.channels = channels;
             info_.bitsPerSample = 1;
             info_.durationMs = t.durationMs;
-            info_.format = std::string("SACD-ISO") + (dst ? "(DST)" : "(DSD)") + "→PCM(软解)";
+            info_.format = std::string("SACD-ISO") + (channels > 2 ? "(" + std::to_string(channels) + "ch)" : "")
+                + (dst ? "(DST)" : "(DSD)") + "→PCM(软解)";
             album_ = album;
             artist_ = artist;
         }

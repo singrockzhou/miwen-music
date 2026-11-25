@@ -200,7 +200,8 @@ export class Theme {
   ];
 
   /** 1.0 免费的三套：已经给出去的东西不能收回 */
-  static readonly FREE: string[] = [Theme.DARK, Theme.PAPER, Theme.TAPE];
+  /** 免费主题：暗夜 + 白纸（磁带 v1.7.0 起挪进 Pro，与功能规划切法表对齐） */
+  static readonly FREE: string[] = [Theme.DARK, Theme.PAPER];
 
   /** 派生结果按 key|pin 缓存：build 每帧都会调 of()，派生色不许每次重算 */
   private static cache: Map<string, Tokens> = new Map<string, Tokens>();

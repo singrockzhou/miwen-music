@@ -606,7 +606,7 @@ export struct SettingsView {
               }
             }, (k: string) => `theme_${k}_${this.proOwned}`)
             Row() {
-              Text('后四套为密纹 Pro 主题。高对比把对比度拉到最满，是给弱视用户用的，不是"更黑的暗夜"。')
+              Text('后五套为密纹 Pro 主题。磁带是拟物怀旧档，高对比把对比度拉到最满，是给弱视用户用的，不是"更黑的暗夜"。')
                 .fontSize(9)
                 .fontColor(this.c().faint)
                 .lineHeight(15)

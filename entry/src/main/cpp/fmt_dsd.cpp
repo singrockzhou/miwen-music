@@ -515,8 +515,9 @@ public:
             info_.error = "DFF 里没有音频数据块";
             return info_;
         }
-        if (m.channels < 1 || m.channels > 2) {
-            info_.error = "暂不支持 " + std::to_string(m.channels) + " 声道的 DFF";
+        if (m.channels < 1 || m.channels > 6) {
+            // v1.7.0：放宽到 1–6（Decimator 原生多声道；输出层 ETS 侧 downmix 立体声），与 DSF 对齐
+            info_.error = "暂不支持 " + std::to_string(m.channels) + " 声道的 DFF（支持 1–6）";
             return info_;
         }
         if (m.freq <= 0) {
