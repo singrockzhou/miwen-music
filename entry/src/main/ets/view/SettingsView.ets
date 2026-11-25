@@ -890,7 +890,7 @@ export struct SettingsView {
             SettingRow({
               label: '均衡器',
               value: this.proOwned ? '' : 'PRO',
-              detail: '十段图形 + 参数化 PEQ（频点/Q/类型可调）+ PreAmp 与预设，无损与 DSD 全格式实时生效。EQ 关闭时与直出模式逐字节等价。MP3/AAC 走系统播放器不覆盖。',
+              detail: '十段图形 + 参数化 PEQ（频点/Q/类型可调）+ PreAmp 与预设，原生通道格式（AIFF/WavPack/ALAC/APE/DSD/SACD ISO）实时生效。EQ 关闭时与直出模式逐字节等价。WAV/FLAC/MP3/AAC 走系统播放器不覆盖。',
               onTap: () => {
                 this.openEq();
               }

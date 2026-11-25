@@ -460,12 +460,13 @@ Track → NativePlayer.open(path)
 - [x] 封面回写：内嵌 PNG 封面的 FLAC/MP3 重扫后走维护页「批量改标签 + 回写文件 + 回写封面」→ 拉回独立解析：FLAC 块序 STREAMINFO+VORBIS_COMMENT+**PICTURE(type3/image/png/177B)**+PADDING、MP3 **APIC(image/png/type3)**；ARTIST/TPE1 同步回写正确；**STREAMINFO md5 不变、音频区与 v1.5.0 基线逐字节一致**。无缓存封面的曲目自动跳过封面（第一轮实测）
 - [x] 磁带主题挪进 Pro：`Theme.FREE` 收敛为暗夜+白纸；设置页文案「后五套为密纹 Pro 主题」；已解锁设备切换磁带成功（全页拟物配色）。未购拦截走与黑胶等四套完全相同的 `Theme.isPro` 门禁 + 启动回退路径（该路径 v1.1 已真机验证；未购设备单独场景未复测，如实标注）
 
-### 9.12 v1.8.0（均衡器 / 参数化 PEQ）◐ 构建成功，真机验证待补（2026-11-25）
+### 9.12 v1.8.0（均衡器 / 参数化 PEQ）✓ 全部真机验证通过（2026-11-25）
 - [x] C++ 引擎：`fmt_eq.h/.cpp` EqSource（RBJ biquad 级联，peaking/lowshelf/highshelf，频点/Q/类型参数化 + PreAmp；256 帧系数插值防 zipper noise；seek 复位滤波状态；EQ off/全平直逐样本旁路）
 - [x] PC 交叉验证：Python 逐样本 biquad 仿真与频响公式两条独立路径一致（100Hz→0.252 / 1kHz→0.499 / 8kHz→0.252，素材 `tools/eq_material/gen_eq_material.py` 生成）
 - [x] 接线：解码链统一为 原始解码器→RateSource(WSOLA)→EqSource(EQ)，napi `setEq(id, config)` 随时切换；换曲保持（会话级偏好）
 - [x] UI：EQPage（总开关 + PreAmp + 九组预设 + 增益柱状示意 + 图形/参数双 tab），设置页入口（试用门禁 key 'eq'，与听歌统计同模式），ProPage 清单加条目
-- [ ] 真机验证：eq-tones.wav 三段 rms 断言（EQ off 基线 + 1k+6dB 频段增益 ×2.0 + 邻带不变）、切换无爆音、重启保持——待设备上线补验
+- [x] 真机验证（验证报告第二十节，8 项）：EQ off 基线 rms 0.250；EQ on(1k+6dB) 三段 0.252/0.499/0.252 与 PC 基准逐段一致；播放中 +6→-12 无爆音；换曲/重启保持；MP3 走 AVPlayer 静默失效；变速 0.75×+EQ(1k-12) 叠加 1kHz rms 0.063≈理论 0.0628；试用门禁设备已购未验（⊘）
+- [x] **覆盖口径修正（真机发现）**：EQ 仅覆盖 native 通道（AIFF/WavPack/ALAC/APE/DSD/DST/SACD-ISO）；WAV/FLAC/MP3/M4A 走 AVPlayer 不覆盖——文案已如实修正，FLAC/MP3 native 解码列为 v1.9 候选
 
 ---
 

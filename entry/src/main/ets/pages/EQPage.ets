@@ -42,7 +42,7 @@ const TYPE_LABELS: string[] = ['峰型', '低架', '高架'];
  * 两个 tab：图形（10 段固定频点调增益）与参数（每段可调类型/频点/Q——参数化口径，
  * 系统任何版本都不提供，见可行性说明）。所有改动实时应用：
  * - 原生解码通道（无损/DSD）立即生效，native 侧 256 帧系数插值防爆音；
- * - AVPlayer 通道（MP3/AAC 回退）拿不到 PCM，EQ 不覆盖——页面文案如实说明。
+ * - AVPlayer 通道（WAV/FLAC/MP3/AAC）拿不到 PCM，EQ 不覆盖——页面文案如实说明。
  * EQ 关闭（或全零增益）时 native 逐样本旁路，与直出模式逐字节等价。
  */
 @Entry
@@ -436,7 +436,7 @@ struct EQPage {
                 .fontSize(10)
                 .fontColor(this.c().dim)
                 .fontWeight(FontWeight.Medium)
-              Text('仅原生解码通道生效：FLAC / WAV / AIFF / WavPack / ALAC / APE / DSD（dsf·dff·DST）/ SACD ISO。MP3、AAC 走系统播放器，拿不到音频数据，不覆盖；切到这两类格式时 EQ 自动失效，切回无损即恢复。EQ 关闭时与直出模式逐字节等价。')
+              Text('仅原生解码通道生效：AIFF / WavPack / ALAC / APE / DSD（dsf·dff·DST）/ SACD ISO。WAV、FLAC、MP3、AAC 走系统播放器，应用拿不到 PCM，不覆盖；切到这些格式时 EQ 自动静默失效，切回原生格式即恢复。EQ 关闭时与直出模式逐字节等价。')
                 .fontSize(9)
                 .fontColor(this.c().faint)
                 .margin({ top: 5 })
