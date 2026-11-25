@@ -4,7 +4,7 @@
 export class Const {
   static readonly APP_NAME: string = '密纹音乐';
   static readonly APP_EN: string = 'LOCAL RECORD STORE';
-  static readonly VERSION: string = '1.7.0';
+  static readonly VERSION: string = '1.8.0';
 
   /** preferences 文件名 */
   static readonly PREF_NAME: string = 'miwen_pref';
@@ -42,6 +42,8 @@ export class Const {
   static readonly KEY_PRO_DEV: string = 'pro_dev_grant';
   /** 直出模式：关闭系统音效链 */
   static readonly KEY_DIRECT: string = 'direct_mode';
+  /** 均衡器（v1.8.0）：配置 JSON {enabled, preamp, preset, bands:[{freq,gain,q,type}]} */
+  static readonly KEY_EQ: string = 'eq_config';
   /** 无缝播放：off / gapless / fade */
   static readonly KEY_GAPLESS: string = 'gapless_mode';
   /** 桌面歌词开关（走 AVSession 系统桌面歌词） */

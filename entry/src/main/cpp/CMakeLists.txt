@@ -124,6 +124,7 @@ add_library(miwen SHARED
     fmt_alac.cpp
     fmt_ape.cpp
     fmt_rate.cpp
+    fmt_eq.cpp
     fmt_dsd.cpp
     fmt_dst.cpp
     fmt_iso.cpp

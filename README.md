@@ -8,7 +8,7 @@
 - 设备：phone / tablet / 2in1（手机、折叠、平板、鸿蒙 PC）
 - 编译验证：`hvigorw assembleHap --mode module -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**，产物 `entry/build/default/outputs/default/entry-default-signed.hap`（3.82 MB，已签名可直接 `hdc install`）
 - 代码规模：54 个 `.ets` 约 16,000 行 + `cpp/` 自研 22 文件约 5,500 行（另内嵌 libwavpack 5.8.1、Apple ALAC 与 Monkey's Audio MACLib 官方源码）
-- 当前版本：v1.7.0（**多声道 SACD 区 + ISO 标题编码 + 封面回写 + 磁带主题挪进 Pro**——5/6 声道区解码、输出层 downmix 立体声；ISO 内曲目标签按 UTF-16/UTF-8/Shift-JIS/GB2312 探测解码（自生成码表，Latin-1 兜底）；批量改标签可选把封面写进文件本体（FLAC PICTURE / MP3 APIC）；免费主题收敛为暗夜+白纸，磁带划入 Pro 与规划切法表对齐。v1.6.0 已含年度听歌报告 + 自定义强调色；v1.5.0 已含 DST 解压、SACD ISO 直读、文件标签回写）
+- 当前版本：v1.8.0（**均衡器 / 参数化 PEQ**——应用内 PCM 域调音：十段图形 + 参数化（频点/Q/类型三选）+ PreAmp 与九组预设，无损/DSD 全格式实时生效，EQ 关闭逐样本旁路与直出逐字节等价；native 侧 RBJ biquad 级联 + 256 帧系数插值防爆音。v1.7.0 已含多声道 SACD 区 + ISO 标题编码 + 封面回写 + 磁带 Pro 化；v1.6.0 年度听歌报告 + 自定义强调色；v1.5.0 DST 解压、SACD ISO 直读、文件标签回写）
 - 文档：全部收在 [`docs/`](docs/)，见下方文档索引
 
 ### 文档索引
@@ -125,6 +125,11 @@ AVPlayer 这条链。设置 → 诊断 → 播放自检会把内置 4 秒扫频 
 > 鸿蒙 SDK 对第三方只开放 `audio.AudioEffectMode` 两态（`EFFECT_NONE` / `EFFECT_DEFAULT`），
 > 全 SDK 没有 `AudioEffectManager`、没有频段增益 API；`AudioLoopbackEqualizerPreset` 只作用于耳返。
 > 所以做不了 10 段 EQ，能做到的是「旁路系统音效、让 PCM 原样输出」。
+>
+> **v1.8.0 注记**：这个结论针对当时的 AVPlayer 通道。v1.3–v1.5 自建解码链后，EQ 在应用内
+> PCM 域自行实现（fmt_eq.cpp，RBJ biquad 级联），已作为 Pro 功能实装——系统至今不给
+> 频段增益接口（API 26 复核过），我们自己做，且不做系统 EQ 节点那种 48k/16bit 降格调音。
+> 详见 `docs/密纹音乐-EQ参数化均衡器可行性说明.md`。
 
 真机日志（设置 → 诊断 → 播放自检，开直出）：
 
@@ -454,6 +459,13 @@ Track → NativePlayer.open(path)
 - [x] ISO 标题编码：同一素材里专辑名 `サウンドテスト`（Shift-JIS）、曲名 `多声道测试曲`（GB2312）双双正确解码显示（Latin-1 路径下必乱码）；旧立体声 ISO `Miwen Track A / Miwen SACD Test`（ASCII）不受影响。码表由 `tools/dsd_material/gen_charset_tables.py` 自 Python codecs 生成（SJIS 7336 项 + GB2312 7445 项，运行时二分）
 - [x] 封面回写：内嵌 PNG 封面的 FLAC/MP3 重扫后走维护页「批量改标签 + 回写文件 + 回写封面」→ 拉回独立解析：FLAC 块序 STREAMINFO+VORBIS_COMMENT+**PICTURE(type3/image/png/177B)**+PADDING、MP3 **APIC(image/png/type3)**；ARTIST/TPE1 同步回写正确；**STREAMINFO md5 不变、音频区与 v1.5.0 基线逐字节一致**。无缓存封面的曲目自动跳过封面（第一轮实测）
 - [x] 磁带主题挪进 Pro：`Theme.FREE` 收敛为暗夜+白纸；设置页文案「后五套为密纹 Pro 主题」；已解锁设备切换磁带成功（全页拟物配色）。未购拦截走与黑胶等四套完全相同的 `Theme.isPro` 门禁 + 启动回退路径（该路径 v1.1 已真机验证；未购设备单独场景未复测，如实标注）
+
+### 9.12 v1.8.0（均衡器 / 参数化 PEQ）◐ 构建成功，真机验证待补（2026-11-25）
+- [x] C++ 引擎：`fmt_eq.h/.cpp` EqSource（RBJ biquad 级联，peaking/lowshelf/highshelf，频点/Q/类型参数化 + PreAmp；256 帧系数插值防 zipper noise；seek 复位滤波状态；EQ off/全平直逐样本旁路）
+- [x] PC 交叉验证：Python 逐样本 biquad 仿真与频响公式两条独立路径一致（100Hz→0.252 / 1kHz→0.499 / 8kHz→0.252，素材 `tools/eq_material/gen_eq_material.py` 生成）
+- [x] 接线：解码链统一为 原始解码器→RateSource(WSOLA)→EqSource(EQ)，napi `setEq(id, config)` 随时切换；换曲保持（会话级偏好）
+- [x] UI：EQPage（总开关 + PreAmp + 九组预设 + 增益柱状示意 + 图形/参数双 tab），设置页入口（试用门禁 key 'eq'，与听歌统计同模式），ProPage 清单加条目
+- [ ] 真机验证：eq-tones.wav 三段 rms 断言（EQ off 基线 + 1k+6dB 频段增益 ×2.0 + 邻带不变）、切换无爆音、重启保持——待设备上线补验
 
 ---
 

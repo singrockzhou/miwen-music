@@ -15,7 +15,8 @@ import { StatsStore } from '../db/StatsStore';
 import { SettingsService } from './SettingsService';
 import { ProService, PRO_KEY } from './ProService';
 import { LyricService } from './LyricService';
-import { NativePlayer } from './NativePlayer';
+import { NativePlayer, EqState } from './NativePlayer';
+import { EqConfig } from 'libmiwen.so';
 import { LrcLine, LrcParser } from '../common/Lrc';
 
 const TAG: string = 'PlayerCore';
@@ -85,6 +86,8 @@ export class PlayerCore {
   private lastTickPos: number = 0;
   // 变速不变调（Pro 2.0）：native 通道走 WSOLA，AVPlayer 走系统 setSpeed。会话级偏好
   private rate: number = 1.0;
+  // 均衡器（v1.8.0，Pro）：仅 native 通道（AVPlayer 拿不到 PCM，无 EQ）。会话级偏好
+  private eq: EqConfig = EqState.defaultConfig();
   // CUE 分轨（密纹 Pro）：当前曲目的时间片（毫秒），-1 表示整轨播放
   private cueStart: number = -1;
   private cueEnd: number = -1;
@@ -146,6 +149,7 @@ export class PlayerCore {
     }
     this.ctx = ctx;
     this.direct = SettingsService.direct();
+    this.eq = EqState.fromJson(SettingsService.eqConfig());
     this.mode = SettingsService.mode();
     this.gapless = SettingsService.gapless();
     await this.initSession();
@@ -936,6 +940,24 @@ export class PlayerCore {
     return this.direct;
   }
 
+  /**
+   * 均衡器（v1.8.0，Pro）。持久化 + 会话状态 + 立即应用到当前播放。
+   * 仅覆盖原生解码通道（无损/DSD）：AVPlayer 通道（MP3/AAC 回退）拿不到 PCM，
+   * 切到这两类曲目时 EQ 静默失效、切回无损自动恢复——话术在 EQPage 上写明。
+   */
+  setEq(cfg: EqConfig): void {
+    this.eq = cfg;
+    SettingsService.setEqConfig(JSON.stringify(cfg));
+    if (this.isNative && this.native !== null) {
+      this.native.setEq(cfg);
+    }
+    this.notify(true);
+  }
+
+  getEq(): EqConfig {
+    return this.eq;
+  }
+
   private applyEffect(): boolean {
     const p: media.AVPlayer | null = this.player;
     if (p === null) {
@@ -1031,6 +1053,8 @@ export class PlayerCore {
     this.duration = np.getDurationMs();
     // 直出（旁路系统音效）在原生通道同样生效：AudioRenderer 也有 setAudioEffectMode
     np.setDirectMode(this.direct);
+    // 均衡器：换曲保持，open 后立即应用到新句柄（EQ off 时 native 逐样本旁路）
+    np.setEq(this.eq);
     np.setInterruptCallback((event: audio.InterruptEvent) => {
       if (this.native !== np) {
         return;

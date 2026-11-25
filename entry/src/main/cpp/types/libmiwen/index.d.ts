@@ -43,6 +43,27 @@ export const stats: (id: number) => string;
 /** 变速不变调（WSOLA）：0.5~2.0，1.0 直通。随时切换，不需要重建解码器。 */
 export const setRate: (id: number, rate: number) => void;
 
+/** 单段均衡参数（v1.8.0）。
+ *  type: 0 peaking / 1 lowshelf / 2 highshelf；freq Hz（20–20k）；gain dB（±12）；Q 0.2–20。 */
+export interface EqBand {
+  type: number;
+  freq: number;
+  gain: number;
+  q: number;
+}
+
+/** 均衡配置：enabled=false 或全零增益时逐样本旁路（与直出等价）。preamp 单位 dB，±18 封顶。
+ *  preset 是 UI 层的预设标记，native 不读取。 */
+export interface EqConfig {
+  enabled: boolean;
+  preamp: number;
+  preset?: string;
+  bands: EqBand[];
+}
+
+/** 设置均衡（v1.8.0，Pro）：播放中随时切换，系数切换带 256 帧插值防爆音，不需重建解码器。 */
+export const setEq: (id: number, config: EqConfig) => void;
+
 /**
  * SACD ISO 元数据（JSON 字符串，ArkTS 侧 JSON.parse）：
  * { ok, error?, album, artist, tracks: [{ title, durationMs, dst }] }

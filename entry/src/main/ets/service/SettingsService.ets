@@ -170,6 +170,17 @@ export class SettingsService {
     SettingsService.write(Const.KEY_DIRECT, on ? '1' : '0');
   }
 
+  // ---------- 均衡器（v1.8.0） ----------
+
+  /** EQ 配置：JSON 字符串（enabled / preamp / preset / bands）。空串 = 从未调过 */
+  static eqConfig(): string {
+    return SettingsService.raw(Const.KEY_EQ, '');
+  }
+
+  static setEqConfig(json: string): void {
+    SettingsService.write(Const.KEY_EQ, json);
+  }
+
   // ---------- 无缝播放 / 桌面歌词 ----------
 
   /** 无缝播放模式：off / gapless（预加载切流）/ fade（交叉淡入淡出） */

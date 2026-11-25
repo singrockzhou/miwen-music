@@ -60,6 +60,7 @@ struct ProPage {
     { name: 'DST 解压', desc: 'DST 无损压缩（SACD 同款算术解码）的 DFF 直接播', tag: '已实装' },
     { name: 'SACD ISO 直读', desc: '按 LSN 直读镜像，展开成曲目列表播放；立体声区 / DST / 未压缩帧都支持', tag: '已实装' },
     { name: '多声道 SACD 区', desc: '5/6 声道区解码入库；播放时 downmix 立体声输出（真机只有两个扬声器）', tag: '已实装' },
+    { name: '均衡器', desc: '十段图形 + 参数化 PEQ（频点/Q/类型）+ PreAmp 与预设，无损/DSD 实时生效，应用内 PCM 域调音', tag: '已实装' },
     { name: 'ISO 标题编码', desc: 'ISO 内曲目标签按 UTF-16/UTF-8/Shift-JIS/GB2312 探测解码，不再按 Latin-1 收', tag: '已实装' },
     { name: '封面回写', desc: '批量改标签时可选把封面写进文件本体（FLAC PICTURE / MP3 APIC），音频流不动', tag: '已实装' },
     { name: '文件标签回写', desc: '批量改的艺人/专辑可写进文件本体（FLAC Vorbis comment / MP3 ID3v2.3），音频流字节不动', tag: '已实装' },

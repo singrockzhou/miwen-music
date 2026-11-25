@@ -1,10 +1,59 @@
 import { audio } from '@kit.AudioKit';
 import { open as decOpen, read as decRead, seek as decSeek, close as decClose,
   handles as decHandles, version as decVersion, stats as decStats,
-  setRate as decSetRate, openSacdTrack as decOpenSacdTrack } from 'libmiwen.so';
+  setRate as decSetRate, setEq as decSetEq, openSacdTrack as decOpenSacdTrack,
+  EqConfig, EqBand } from 'libmiwen.so';
 import { Logger } from '../common/Logger';
 
 const TAG: string = 'NativePlayer';
+
+export class EqState {
+  /** 10 段固定频点（GEQ 口径）；PEQ 下 freq/Q/type 可调 */
+  static freqs(): number[] {
+    return [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+  }
+
+  static defaultConfig(): EqConfig {
+    const bands: EqBand[] = [];
+    for (const f of EqState.freqs()) {
+      bands.push({ type: 0, freq: f, gain: 0, q: 1.1 });
+    }
+    return { enabled: false, preamp: 0, preset: 'flat', bands: bands };
+  }
+
+  /** 从 JSON 恢复（解析失败一律回默认平直配置，防脏数据） */
+  static fromJson(json: string): EqConfig {
+    const def: EqConfig = EqState.defaultConfig();
+    if (json.length === 0) {
+      return def;
+    }
+    try {
+      const o: EqConfig = JSON.parse(json) as EqConfig;
+      if (!o.bands || o.bands.length < 10) {
+        return def;
+      }
+      const freqs: number[] = EqState.freqs();
+      const bands: EqBand[] = [];
+      for (let i = 0; i < 10; i++) {
+        const b: EqBand = o.bands[i];
+        bands.push({
+          type: Math.max(0, Math.min(2, Math.round(b.type ?? 0))),
+          freq: Math.max(20, Math.min(20000, b.freq ?? freqs[i])),
+          gain: Math.max(-12, Math.min(12, b.gain ?? 0)),
+          q: Math.max(0.2, Math.min(20, b.q ?? 1.1))
+        });
+      }
+      return {
+        enabled: o.enabled === true,
+        preamp: Math.max(-18, Math.min(18, o.preamp ?? 0)),
+        preset: o.preset ?? 'custom',
+        bands: bands
+      };
+    } catch (e) {
+      return def;
+    }
+  }
+}
 
 /** SACD ISO 虚拟曲目的 uri 方案：`<iso路径>#mwi:<trackIndex>`（扫描入库时展开） */
 export function SplitIsoUri(uri: string): string[] {
@@ -51,6 +100,11 @@ export class NativePlayer {
   private direct: boolean = false;
   /** 变速不变调（Pro 2.0）：WSOLA 在 native 侧做；1.0 = 原速直通 */
   private rate: number = 1.0;
+  /**
+   * 均衡器（v1.8.0，Pro）：会话级配置，换曲保持；open 后应用到新句柄。
+   * 类型即 libmiwen.so 的 EqConfig；enabled=false 时 native 逐样本旁路。
+   */
+  private eq: EqConfig = EqState.defaultConfig();
   /**
    * 源时间轴帧数（变速折算后的累计源帧）。变速时 read 返回的是"输出帧"，
    * 直接当进度用会错 rate 倍——按 gotFrames*rate 折算回源帧，seek 时置为落点。
@@ -107,6 +161,12 @@ export class NativePlayer {
     } catch (e) {
       Logger.warn(TAG, `setRate on open failed ${JSON.stringify(e)}`);
     }
+    // 均衡器同样是会话级偏好：open 后立即应用到新句柄
+    try {
+      decSetEq(this.id, this.eq);
+    } catch (e) {
+      Logger.warn(TAG, `setEq on open failed ${JSON.stringify(e)}`);
+    }
 
     // 多声道（3–6）：v1.7.0 起支持解码，输出层 downmix 立体声（真机只有两个扬声器）。
     // renderer 通道恒为 1/2，fill() 里按源声道读取后混音。
@@ -160,6 +220,25 @@ export class NativePlayer {
       }
     }
     Logger.info(TAG, `rate -> ${r}`);
+  }
+
+  /**
+   * 均衡器（v1.8.0，Pro）：会话级配置，播放中即时生效（native 侧 256 帧系数插值防爆音），
+   * 换曲保持。仅覆盖原生解码通道——AVPlayer 通道（MP3/AAC 回退）拿不到 PCM，无 EQ。
+   */
+  setEq(cfg: EqConfig): void {
+    this.eq = cfg;
+    if (this.id !== 0) {
+      try {
+        decSetEq(this.id, cfg);
+        const on: string = cfg.enabled
+          ? `EQ on ${cfg.bands.length}band preamp=${cfg.preamp}dB`
+          : 'EQ off (bypass)';
+        Logger.info(TAG, on);
+      } catch (e) {
+        Logger.warn(TAG, `setEq failed ${JSON.stringify(e)}`);
+      }
+    }
   }
 
   setEndCallback(cb: () => void): void {

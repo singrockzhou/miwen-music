@@ -1,6 +1,7 @@
 #include "napi/native_api.h"
 
 #include "decoder.h"
+#include "fmt_eq.h"
 #include "fmt_iso.h"
 #include "fmt_rate.h"
 #include "fmt_tag.h"
@@ -14,10 +15,13 @@
 namespace {
 
 /** 句柄表条目：除了解码器本身，记下声道数 —— read 要按"帧×声道×4 字节"精确开 ArrayBuffer，
- *  不能拿缓冲区容量顶替，否则 JS 侧会读到尾部垃圾。 */
+ *  不能拿缓冲区容量顶替，否则 JS 侧会读到尾部垃圾。
+ *  链路：原始解码器 → RateSource(变速) → EqSource(均衡)，分别持有指针供 setRate/setEq 定向投递。 */
 struct Entry {
     AudioSource *src;
     int channels;
+    RateSource *rate;
+    EqSource *eq;
 };
 
 // 所有调用都在 UI 线程同步执行（一次读 100ms 数据，量很小），不另开线程；
@@ -150,9 +154,13 @@ napi_value Open(napi_env env, napi_callback_info cb) {
 
     const int32_t id = g_nextId++;
     Entry e;
-    // 统一包一层 WSOLA 变速链：rate=1 时直通零开销，变速随时切换不需要重建解码器
+    // 统一包两层链：RateSource（WSOLA，rate=1 直通零开销）→ EqSource（均衡，
+    // off/全平直时逐样本旁路）。两层都支持播放中随时切换，不需重建解码器。
     RateSource *rs = new RateSource(src, info.channels, info.sampleRate);
-    e.src = rs;
+    EqSource *eq = new EqSource(rs, info.channels, info.sampleRate);
+    e.src = eq;
+    e.rate = rs;
+    e.eq = eq;
     e.channels = info.channels;
     g_sources[id] = e;
     return MakeInfo(env, true, info, id, nullptr);
@@ -245,7 +253,7 @@ napi_value Handles(napi_env env, napi_callback_info cb) {
 /** version() → 解码器版本串，用来确认装到设备上的确实是新 .so */
 napi_value Version(napi_env env, napi_callback_info) {
     napi_value out = nullptr;
-    napi_create_string_utf8(env, "miwen-decoder/0.5 (aiff, wavpack, alac, ape, dsd, dst, sacd-iso, tags)", NAPI_AUTO_LENGTH, &out);
+    napi_create_string_utf8(env, "miwen-decoder/0.6 (aiff, wavpack, alac, ape, dsd, dst, sacd-iso, tags, eq)", NAPI_AUTO_LENGTH, &out);
     return out;
 }
 
@@ -267,14 +275,81 @@ napi_value SetRate(napi_env env, napi_callback_info cb) {
     napi_value args[2] = {nullptr, nullptr};
     napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
     Entry *e = Find(GetInt(env, args[0], -1));
-    if (e != nullptr) {
+    if (e != nullptr && e->rate != nullptr) {
         double rate = 1.0;
         if (napi_get_value_double(env, args[1], &rate) != napi_ok) {
             rate = 1.0;
         }
-        if (auto *rs = dynamic_cast<RateSource *>(e->src)) {
-            rs->setRate(rate);
+        e->rate->setRate(rate);
+    }
+    napi_value undef = nullptr;
+    napi_get_undefined(env, &undef);
+    return undef;
+}
+
+/** setEq(id, config)：PCM 域均衡（v1.8.0，Pro）。
+ *  config 对象：{ enabled: boolean, preamp: number, bands: [{ type, freq, gain, q }] }
+ *  type: 0 peaking / 1 lowshelf / 2 highshelf；freq Hz；gain dB（±12 封顶）；q ≥ 0.2。
+ *  enabled=false 或全零增益时逐样本旁路（与直出等价）。随时切换，不需重建解码器。 */
+napi_value SetEq(napi_env env, napi_callback_info cb) {
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, cb, &argc, args, nullptr, nullptr);
+    Entry *e = Find(GetInt(env, args[0], -1));
+    if (e != nullptr && e->eq != nullptr) {
+        EqSource::Config cfg;
+        napi_value v = nullptr;
+        bool enabled = false;
+        if (napi_get_named_property(env, args[1], "enabled", &v) == napi_ok) {
+            napi_get_value_bool(env, v, &enabled);
         }
+        cfg.enabled = enabled;
+        double preamp = 0.0;
+        if (napi_get_named_property(env, args[1], "preamp", &v) == napi_ok) {
+            if (napi_get_value_double(env, v, &preamp) == napi_ok) {
+                // 封顶：±18dB 之外的输入是脏数据
+                cfg.preampDb = std::max(-18.0, std::min(18.0, preamp));
+            }
+        }
+        if (napi_get_named_property(env, args[1], "bands", &v) == napi_ok) {
+            bool isArr = false;
+            if (napi_is_array(env, v, &isArr) == napi_ok && isArr) {
+                uint32_t n = 0;
+                napi_get_array_length(env, v, &n);
+                if (n > 16) {
+                    n = 16;  // band 上限：UI 口径 10 段，防脏输入撑爆级联
+                }
+                for (uint32_t i = 0; i < n; i++) {
+                    napi_value bv = nullptr;
+                    if (napi_get_element(env, v, i, &bv) != napi_ok) {
+                        continue;
+                    }
+                    EqSource::Band band;
+                    double d = 0;
+                    int32_t t = 0;
+                    // 逐字段读（缺失字段用默认值）
+                    napi_value f = nullptr;
+                    if (napi_get_named_property(env, bv, "type", &f) == napi_ok
+                        && napi_get_value_int32(env, f, &t) == napi_ok) {
+                        band.type = t < 0 ? 0 : (t > 2 ? 2 : t);
+                    }
+                    if (napi_get_named_property(env, bv, "freq", &f) == napi_ok
+                        && napi_get_value_double(env, f, &d) == napi_ok) {
+                        band.freq = std::max(20.0, std::min(20000.0, d));
+                    }
+                    if (napi_get_named_property(env, bv, "gain", &f) == napi_ok
+                        && napi_get_value_double(env, f, &d) == napi_ok) {
+                        band.gainDb = std::max(-12.0, std::min(12.0, d));
+                    }
+                    if (napi_get_named_property(env, bv, "q", &f) == napi_ok
+                        && napi_get_value_double(env, f, &d) == napi_ok) {
+                        band.q = std::max(0.2, std::min(20.0, d));
+                    }
+                    cfg.bands.push_back(band);
+                }
+            }
+        }
+        e->eq->setConfig(cfg);
     }
     napi_value undef = nullptr;
     napi_get_undefined(env, &undef);
@@ -347,7 +422,10 @@ napi_value OpenSacdTrack(napi_env env, napi_callback_info cb) {
     const int32_t id = g_nextId++;
     Entry e;
     RateSource *rs = new RateSource(src, info.channels, info.sampleRate);
-    e.src = rs;
+    EqSource *eq = new EqSource(rs, info.channels, info.sampleRate);
+    e.src = eq;
+    e.rate = rs;
+    e.eq = eq;
     e.channels = info.channels;
     g_sources[id] = e;
     return MakeInfo(env, true, info, id, nullptr);
@@ -387,6 +465,7 @@ napi_value Init(napi_env env, napi_value exports) {
         {"version", nullptr, Version, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stats", nullptr, Stats, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setRate", nullptr, SetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setEq", nullptr, SetEq, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isoInfo", nullptr, IsoInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"openSacdTrack", nullptr, OpenSacdTrack, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeTags", nullptr, WriteTags, nullptr, nullptr, nullptr, napi_default, nullptr},

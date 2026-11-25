@@ -243,6 +243,25 @@ export struct SettingsView {
     this.panelOpen = true;
   }
 
+  /** 均衡器入口（v1.8.0）：与听歌统计同一套试用门槛（key 'eq'） */
+  private openEq(): void {
+    if (this.proOwned) {
+      router.pushUrl({ url: 'pages/EQPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+      return;
+    }
+    if (ProService.trialLeft('eq') <= 0) {
+      promptAction.showToast({ message: '均衡器的试用次数用完了' });
+      router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+      return;
+    }
+    this.panelMode = 'eq';
+    this.panelItems = [
+      { label: `试用一次（还剩 ${ProService.trialLeft('eq')} 次）`, hint: '调整后立即在当前播放生效', danger: false },
+      { label: '去解锁密纹 Pro', hint: `¥${Const.PRO_PRICE_EARLY}`, danger: false }
+    ];
+    this.panelOpen = true;
+  }
+
   private confirmClear(): void {
     this.panelMode = 'clear';
     this.panelItems = [
@@ -344,6 +363,24 @@ export struct SettingsView {
           duration: 2000
         });
         router.pushUrl({ url: 'pages/StatsPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+        return;
+      }
+      router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
+      return;
+    }
+    if (this.panelMode === 'eq') {
+      this.panelOpen = false;
+      if (i === 0) {
+        if (!ProService.consumeTrial('eq')) {
+          promptAction.showToast({ message: '试用次数用完了' });
+          return;
+        }
+        const left: number = ProService.trialLeft('eq');
+        promptAction.showToast({
+          message: left > 0 ? `已用一次试用，剩 ${left} 次` : '这是最后一次试用',
+          duration: 2000
+        });
+        router.pushUrl({ url: 'pages/EQPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
         return;
       }
       router.pushUrl({ url: 'pages/ProPage' }).catch((e: Object) => Logger.warn('Settings', `${e}`));
@@ -848,6 +885,18 @@ export struct SettingsView {
             })
 
             this.Divider()
+            // 均衡器（v1.8.0，Pro）：应用内 PCM 域调音。系统不开放频段增益（见可行性说明），
+            // 这是在自建解码链上自己实现的——与直出不冲突：关 EQ 是还原，开 EQ 是精确调音
+            SettingRow({
+              label: '均衡器',
+              value: this.proOwned ? '' : 'PRO',
+              detail: '十段图形 + 参数化 PEQ（频点/Q/类型可调）+ PreAmp 与预设，无损与 DSD 全格式实时生效。EQ 关闭时与直出模式逐字节等价。MP3/AAC 走系统播放器不覆盖。',
+              onTap: () => {
+                this.openEq();
+              }
+            })
+
+            this.Divider()
             SettingRow({
               label: '无缝播放',
               value: this.proOwned ? this.gapLabel : 'PRO',
@@ -992,7 +1041,7 @@ export struct SettingsView {
           title: this.panelMode === 'clear' ? '清空曲库索引？'
             : (this.panelMode === 'accent' ? '自定义强调色'
               : (this.panelMode === 'stats' ? '听歌统计'
-                : (this.panelMode === 'gapless' ? '无缝播放' : (this.panelMode === 'desklyric' ? '桌面歌词' : '睡眠定时')))),
+                : (this.panelMode === 'eq' ? '均衡器' : (this.panelMode === 'gapless' ? '无缝播放' : (this.panelMode === 'desklyric' ? '桌面歌词' : '睡眠定时'))))),
           subtitle: this.panelMode === 'clear'
             ? '只删除密纹自己建的索引，不会动你磁盘上的任何文件。下次选目录会重新扫。'
             : (this.panelMode === 'sleep' ? '到点自动暂停，不退出应用' : '密纹 Pro 功能'),
